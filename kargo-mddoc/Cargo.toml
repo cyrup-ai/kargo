@@ -8,10 +8,13 @@ keywords = ["documentation", "rustdoc", "markdown", "api", "docs"]
 categories = ["development-tools", "command-line-utilities"]
 
 [dependencies]
+# Plugin API
+kargo-plugin-api = { path = "../kargo-plugin-api" }
+
 # Command line argument parsing
 clap = { version = "4.5", features = ["derive"] }
 indicatif = "0.17.11"
-rustdoc-types = "0.41"
+rustdoc-types = "0.46"
 
 # Error handling
 anyhow = "1.0"
@@ -31,6 +34,13 @@ dirs = "6.0.0"
 log = "0.4"
 env_logger = "0.11.8"
 
+# Async runtime
+tokio = { version = "1.45", features = ["fs", "rt", "macros"] }
+
+# TOML editing
+toml_edit = "0.22"
+
 [lib]
 name = "kargo_mddoc"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]

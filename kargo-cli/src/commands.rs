@@ -1,9 +1,9 @@
 use crate::events::{Event, EventBus};
-use anyhow::{Context, Result};
-use futures::future::{self, Future};
-use std::path::Path;
-use std::process::Command;
+use anyhow::Result;
+use futures::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::process::Command;
 
 /// A future that runs a series of shell commands
 pub struct CommandExecution<'a> {
@@ -15,12 +15,15 @@ pub struct CommandExecution<'a> {
 impl<'a> Future for CommandExecution<'a> {
     type Output = Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         // This implementation executes commands synchronously but returns a Future
         // that can be awaited. In a real implementation, you might want to make the
         // actual command execution asynchronous as well.
         let this = self.get_mut();
-        
+
         for cmd in &this.commands {
             this.runner.events.publish(Event::CommandStarted {
                 command: cmd.clone(),
@@ -33,12 +36,17 @@ impl<'a> Future for CommandExecution<'a> {
             let output = match Command::new(program)
                 .args(args)
                 .current_dir(&this.working_dir)
-                .output() {
-                    Ok(out) => out,
-                    Err(e) => return std::task::Poll::Ready(Err(anyhow::anyhow!(
-                        "Failed to execute command {}: {}", cmd, e
-                    ))),
-                };
+                .output()
+            {
+                Ok(out) => out,
+                Err(e) => {
+                    return std::task::Poll::Ready(Err(anyhow::anyhow!(
+                        "Failed to execute command {}: {}",
+                        cmd,
+                        e
+                    )))
+                }
+            };
 
             let success = output.status.success();
             this.runner.events.publish(Event::CommandFinished {
@@ -67,24 +75,18 @@ impl CommandRunner {
     pub fn new(events: EventBus) -> Self {
         Self { events }
     }
-    
+
     /// Runs a series of shell commands in the specified directory.
     /// Returns a Future that can be awaited to execute the commands.
-    pub fn run_commands<'a>(&'a self, commands: &[String], working_dir: &Path) -> CommandExecution<'a> {
+    pub fn run_commands<'a>(
+        &'a self,
+        commands: &[String],
+        working_dir: &Path,
+    ) -> CommandExecution<'a> {
         CommandExecution {
             runner: self,
             commands: commands.to_vec(),
             working_dir: working_dir.to_path_buf(),
         }
-    }
-}
-                    "Command failed: {}\nStderr: {}",
-                    cmd,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-        }
-
-        Ok(())
     }
 }

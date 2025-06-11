@@ -6,9 +6,10 @@ use tokio::fs;
 use toml_edit::DocumentMut;
 
 use crate::project::CargoSection;
-use crate::up2date::crates_io::get_latest_version;
-use crate::up2date::models::Dependency;
-use crate::up2date::types::DependencyUpdate;
+// TODO: These should use kargo-upgrade when integrated
+// use kargo_upgrade::crates_io::get_latest_version;
+// use kargo_upgrade::models::Dependency;
+// use kargo_upgrade::types::DependencyUpdate;
 
 /// Structure representing a Rust script with cargo dependencies
 pub struct RustScript {
@@ -135,6 +136,7 @@ impl RustScript {
         }
     }
 
+    /* TODO: Uncomment when kargo-upgrade is integrated
     /// Update dependencies to their latest versions
     pub async fn update_dependencies(&mut self) -> Result<Vec<DependencyUpdate>> {
         let mut updates = Vec::new();
@@ -217,6 +219,7 @@ impl RustScript {
 
         Ok(updates)
     }
+    */
 }
 
 /// Extract version from a TOML value

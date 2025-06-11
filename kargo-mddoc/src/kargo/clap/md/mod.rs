@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{debug, info};
-use rustdoc_md::{config::Config, generator::DocGenerator};
+use crate::{Config, DocGenerator};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -45,7 +45,7 @@ struct Subcommand {
 
 fn main() -> anyhow::Result<()> {
     // Parse command line arguments
-    let cli = Cli::parse();
+    let cli = Subcommand::parse();
 
     // Initialize logger based on verbosity
     if cli.verbose {
@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     // By default, we generate Markdown unless json_only is specified
     if !cli.json_only {
         debug!("Converting JSON to Markdown");
-        let markdown_path = rustdoc_md::markdown::convert_to_markdown(&json_path)?;
+        let markdown_path = crate::markdown::convert_to_markdown(&json_path)?;
         info!("Markdown documentation generated at: {}", markdown_path.display());
         
         // Clean up JSON files if not needed

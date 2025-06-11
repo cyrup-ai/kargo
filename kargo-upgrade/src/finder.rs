@@ -35,7 +35,6 @@ pub fn find_cargo_toml_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
 
 /// Find all rust-script files recursively in a directory
 pub fn find_rust_script_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
-    use std::fs;
     let root_path = root.as_ref().to_string_lossy();
     let pb = ProgressBar::new_spinner();
     pb.set_message(format!("Scanning for Rust script files in {}...", root_path));

@@ -34,7 +34,7 @@ impl VendorManager {
         for pkg in metadata.packages {
             if self.dedupe {
                 // Only keep latest version of each package
-                deps.entry(pkg.name.clone())
+                deps.entry(pkg.name.as_str().to_string())
                     .and_modify(|e: &mut Package| {
                         if pkg.version > e.version {
                             *e = pkg.clone();
@@ -69,7 +69,7 @@ impl VendorManager {
         // For now, just create placeholder
         let pkg_path = self
             .vendor_path
-            .join(&pkg.name)
+            .join(pkg.name.as_str())
             .join(&pkg.version.to_string());
         std::fs::create_dir_all(&pkg_path)?;
 

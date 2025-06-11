@@ -2,10 +2,9 @@
 // for the kargo CLI tool. This includes both native Rust library plugins and WASM plugins
 // via the Extism framework.
 
-mod manager;
-mod wasm_adapter;
 mod host_functions;
+pub mod manager;
+mod wasm_adapter;
 
 // Re-export key components
 pub use manager::PluginManager;
-pub use wasm_adapter::WasmPluginAdapter;

@@ -1,18 +1,23 @@
 use anyhow::Result;
 use env_logger;
-use krater::cli::{handle_command, parse_args};
 use log::info;
+
+mod cli;
+mod plugins;
+
+use cli::{build_root_cli, dispatch};
+use plugins::manager::PluginManager;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logger
     env_logger::init();
+    info!("Starting Kargo Flux runtime");
 
-    info!("Starting Krater - Rust package manager and documentation tool");
+    let mut pm = PluginManager::new();
+    pm.discover_and_load_plugins()?;
 
-    // Parse command line arguments
-    let cli = parse_args();
+    let app = build_root_cli(&pm);
+    let matches = app.get_matches();
 
-    // Handle the command
-    handle_command(cli).await
+    dispatch(&pm, &matches).await
 }

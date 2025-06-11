@@ -266,7 +266,7 @@ fn analyze_relationships(projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
 fn generate_index_yaml(projects: &[ProjectInfo]) -> Result<()> {
     println!("Generating index.yaml...");
 
-    let yaml = serde_yaml::to_string(projects)?;
+    let yaml = serde_yaml_ok::to_string(projects)?;
     std::fs::write("index.yaml", yaml)?;
 
     println!("✅ index.yaml generated with {} projects", projects.len());

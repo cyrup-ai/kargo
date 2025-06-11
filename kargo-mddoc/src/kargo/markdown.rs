@@ -3,9 +3,10 @@ use crate::utils;
 use log::{debug, info};
 use std::path::{Path, PathBuf};
 use rustdoc_types::{Crate, Id, Item, ItemEnum};
-use rustdoc_types::{Generics, Type, GenericArgs, GenericArg};
+use rustdoc_types::{Generics, Type, GenericArgs, GenericArg, GenericParamDef, GenericParamDefKind};
 use rustdoc_types::{StructKind, VariantKind, Function, Trait, Impl, Visibility};
-use rustdoc_types::{Struct, Enum, Union};
+use rustdoc_types::{Struct, Enum, Union, Module, TypeAlias, Static, Constant};
+use rustdoc_types::{Path as RustdocPath, AssocItemConstraint, AssocItemConstraintKind, Term, GenericBound};
 
 /// Convert JSON documentation to Markdown
 pub fn convert_to_markdown(json_path: &Path) -> Result<PathBuf, Error> {
@@ -95,7 +96,7 @@ fn process_items(output: &mut String, item_ids: &[Id], data: &Crate, level: usiz
                 | ItemEnum::TypeAlias(_) => types.push(id.clone()),
                 ItemEnum::Trait(_) | ItemEnum::TraitAlias(_) => traits.push(id.clone()),
                 ItemEnum::Function(_) => functions.push(id.clone()),
-                ItemEnum::Constant(_) | ItemEnum::Static(_) => constants.push(id.clone()),
+                ItemEnum::Constant { .. } | ItemEnum::Static(_) => constants.push(id.clone()),
                 ItemEnum::Macro(_) | ItemEnum::ProcMacro(_) => macros.push(id.clone()),
                 // Note: The Use variant is named differently in different rustdoc-types versions
                 ItemEnum::ExternCrate { .. } => reexports.push(id.clone()), // Categorize re-exports
@@ -248,7 +249,7 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
                             output.push_str(&format!(
                                 "{} Implementation of `{}` for `{}`\n\n",
                                 heading,
-                                trait_.name,
+                                trait_.path,
                                 format_type(&impl_.for_, data)
                             ));
                         } else {
@@ -371,7 +372,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                     }
                     StructKind::Plain {
                         fields,
-                        fields_stripped,
+                        has_stripped_fields,
                     } => {
                         output.push_str(" {\n");
                         for field_id in fields {
@@ -396,7 +397,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                                 }
                             }
                         }
-                        if *fields_stripped {
+                        if *has_stripped_fields {
                             output.push_str("    // Some fields omitted\n");
                         }
                         output.push('}');
@@ -407,20 +408,20 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         ItemEnum::Function(function) => {
             format_function_signature(output, item, function, data);
         }
-        ItemEnum::Constant(constant) => {
+        ItemEnum::Constant { type_, const_ } => {
             if let Some(name) = &item.name {
                 output.push_str(&format!(
                     "const {}: {} = {};",
                     name,
-                    format_type(&constant.type_, data),
-                    constant.expr
+                    format_type(type_, data),
+                    const_.expr
                 ));
             }
         }
         ItemEnum::Static(static_) => {
             if let Some(name) = &item.name {
                 output.push_str("static ");
-                if static_.mutable {
+                if static_.is_mutable {
                     output.push_str("mut ");
                 }
                 output.push_str(&format!(
@@ -462,7 +463,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                     }
                 }
 
-                if union_.fields_stripped {
+                if union_.has_stripped_fields {
                     output.push_str("    // Some fields omitted\n");
                 }
 
@@ -537,10 +538,10 @@ fn format_generics(output: &mut String, generics: &Generics, data: &Crate) {
             rustdoc_types::GenericParamDefKind::Type {
                 bounds,
                 default,
-                synthetic,
+                is_synthetic,
             } => {
                 // If synthetic, add a note
-                if *synthetic {
+                if *is_synthetic {
                     output.push_str("/* synthetic */ ");
                 }
 
@@ -610,18 +611,13 @@ fn format_where_clause(output: &mut String, predicates: &[rustdoc_types::WherePr
                     format_trait_bounds(output, bounds, data);
                 }
             }
-            rustdoc_types::WherePredicate::RegionPredicate { lifetime, bounds } => {
+            rustdoc_types::WherePredicate::LifetimePredicate { lifetime, outlives } => {
                 output.push_str(&format!("'{}", lifetime));
-                if !bounds.is_empty() {
+                if !outlives.is_empty() {
                     output.push_str(": ");
-                    for (j, bound) in bounds.iter().enumerate() {
-                        match bound {
-                            rustdoc_types::GenericBound::Outlives(lt) => {
-                                output.push_str(&format!("'{}", lt));
-                            },
-                            _ => output.push_str("/* unsupported bound */"),
-                        }
-                        if j < bounds.len() - 1 {
+                    for (j, lt) in outlives.iter().enumerate() {
+                        output.push_str(&format!("'{}", lt));
+                        if j < outlives.len() - 1 {
                             output.push_str(" + ");
                         }
                     }
@@ -675,7 +671,7 @@ fn format_trait_bounds(output: &mut String, bounds: &[rustdoc_types::GenericBoun
                     output.push_str("> ");
                 }
 
-                output.push_str(&trait_.name);
+                output.push_str(&trait_.path);
                 if let Some(args) = &trait_.args {
                     let mut args_str = String::new();
                     format_generic_args(&mut args_str, args, data);
@@ -698,8 +694,8 @@ fn format_trait_bounds(output: &mut String, bounds: &[rustdoc_types::GenericBoun
 /// Format generic arguments for a type
 fn format_generic_args(output: &mut String, args: &GenericArgs, data: &Crate) {
     match args {
-        GenericArgs::AngleBracketed { args, bindings } => {
-            if args.is_empty() && bindings.is_empty() {
+        GenericArgs::AngleBracketed { args, constraints } => {
+            if args.is_empty() && constraints.is_empty() {
                 return;
             }
 
@@ -714,39 +710,39 @@ fn format_generic_args(output: &mut String, args: &GenericArgs, data: &Crate) {
                     GenericArg::Infer => output.push('_'),
                 }
 
-                if i < args.len() - 1 || !bindings.is_empty() {
+                if i < args.len() - 1 || !constraints.is_empty() {
                     output.push_str(", ");
                 }
             }
 
-            // Format bindings
-            for (i, binding) in bindings.iter().enumerate() {
-                output.push_str(&binding.name);
+            // Format constraints (previously called bindings)
+            for (i, constraint) in constraints.iter().enumerate() {
+                output.push_str(&constraint.name);
 
-                // Format binding args if present
+                // Format constraint args if present
                 let mut args_str = String::new();
-                format_generic_args(&mut args_str, &binding.args, data);
+                format_generic_args(&mut args_str, &constraint.args, data);
                 if !args_str.is_empty() && args_str != "<>" {
                     output.push_str(&args_str);
                 }
 
-                // TypeBinding has name, args, binding in rustdoc-types 0.24.0
-                // The binding field contains the constraint information
-                match binding.binding {
-                    rustdoc_types::TypeBindingKind::Equality(ref term) => {
+                // In newer rustdoc-types, AssocItemConstraint has name, args, and binding
+                // The binding is now an enum with Equality and Constraint variants
+                match &constraint.binding {
+                    AssocItemConstraintKind::Equality(ref term) => {
                         output.push_str(" = ");
                         match term {
-                            rustdoc_types::Term::Type(type_) => output.push_str(&format_type(&type_, data)),
-                            rustdoc_types::Term::Constant(constant) => output.push_str(&constant.expr),
+                            Term::Type(type_) => output.push_str(&format_type(&type_, data)),
+                            Term::Constant(constant) => output.push_str(&constant.expr),
                         }
                     }
-                    rustdoc_types::TypeBindingKind::Constraint(ref bounds) => {
+                    AssocItemConstraintKind::Constraint(ref bounds) => {
                         output.push_str(": ");
                         format_trait_bounds(output, bounds, data);
                     }
                 }
 
-                if i < bindings.len() - 1 {
+                if i < constraints.len() - 1 {
                     output.push_str(", ");
                 }
             }
@@ -784,7 +780,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
 
     match ty {
         Type::ResolvedPath(path) => {
-            output.push_str(&path.name);
+            output.push_str(&path.path);
             if let Some(args) = &path.args {
                 let mut args_str = String::new();
                 format_generic_args(&mut args_str, args, data);
@@ -813,7 +809,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
                     output.push_str("> ");
                 }
 
-                output.push_str(&trait_.trait_.name);
+                output.push_str(&trait_.trait_.path);
                 if let Some(args) = &trait_.trait_.args {
                     let mut args_str = String::new();
                     format_generic_args(&mut args_str, args, data);
@@ -856,10 +852,10 @@ fn format_type(ty: &Type, data: &Crate) -> String {
             }
 
             // Function header (const, unsafe, extern, etc.)
-            if fn_ptr.header.const_ {
+            if fn_ptr.header.is_const {
                 output.push_str("const ");
             }
-            if fn_ptr.header.unsafe_ {
+            if fn_ptr.header.is_unsafe {
                 output.push_str("unsafe ");
             }
 
@@ -869,22 +865,22 @@ fn format_type(ty: &Type, data: &Crate) -> String {
             output.push_str("fn(");
 
             // Parameters
-            for (i, (_, param_type)) in fn_ptr.decl.inputs.iter().enumerate() {
+            for (i, (_, param_type)) in fn_ptr.sig.inputs.iter().enumerate() {
                 output.push_str(&format_type(param_type, data));
-                if i < fn_ptr.decl.inputs.len() - 1 || fn_ptr.decl.c_variadic {
+                if i < fn_ptr.sig.inputs.len() - 1 || fn_ptr.sig.is_c_variadic {
                     output.push_str(", ");
                 }
             }
 
             // Variadic
-            if fn_ptr.decl.c_variadic {
+            if fn_ptr.sig.is_c_variadic {
                 output.push_str("...");
             }
 
             output.push(')');
 
             // Return type
-            if let Some(return_type) = &fn_ptr.decl.output {
+            if let Some(return_type) = &fn_ptr.sig.output {
                 output.push_str(&format!(" -> {}", format_type(return_type, data)));
             }
         }
@@ -918,8 +914,8 @@ fn format_type(ty: &Type, data: &Crate) -> String {
         Type::Infer => {
             output.push('_');
         }
-        Type::RawPointer { mutable, type_ } => {
-            if *mutable {
+        Type::RawPointer { is_mutable, type_ } => {
+            if *is_mutable {
                 output.push_str("*mut ");
             } else {
                 output.push_str("*const ");
@@ -928,14 +924,14 @@ fn format_type(ty: &Type, data: &Crate) -> String {
         }
         Type::BorrowedRef {
             lifetime,
-            mutable,
+            is_mutable,
             type_,
         } => {
             output.push('&');
             if let Some(lt) = lifetime {
                 output.push_str(&format!("'{} ", lt));
             }
-            if *mutable {
+            if *is_mutable {
                 output.push_str("mut ");
             }
             output.push_str(&format_type(type_, data));
@@ -950,7 +946,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
             output.push_str(&format_type(self_type, data));
 
             if let Some(trait_path) = trait_ {
-                output.push_str(&format!(" as {}", trait_path.name));
+                output.push_str(&format!(" as {}", trait_path.path));
                 if let Some(trait_args) = &trait_path.args {
                     let mut args_str = String::new();
                     format_generic_args(&mut args_str, trait_args, data);
@@ -1044,13 +1040,13 @@ fn format_abi(output: &mut String, abi: &rustdoc_types::Abi) {
 /// Format a function signature
 fn format_function_signature(output: &mut String, item: &Item, function: &Function, data: &Crate) {
     // Function header
-    if function.header.const_ {
+    if function.header.is_const {
         output.push_str("const ");
     }
-    if function.header.unsafe_ {
+    if function.header.is_unsafe {
         output.push_str("unsafe ");
     }
-    if function.header.async_ {
+    if function.header.is_async {
         output.push_str("async ");
     }
 
@@ -1066,26 +1062,26 @@ fn format_function_signature(output: &mut String, item: &Item, function: &Functi
 
         // Parameters
         output.push('(');
-        for (i, (param_name, param_type)) in function.decl.inputs.iter().enumerate() {
+        for (i, (param_name, param_type)) in function.sig.inputs.iter().enumerate() {
             output.push_str(&format!(
                 "{}: {}",
                 param_name,
                 format_type(param_type, data)
             ));
-            if i < function.decl.inputs.len() - 1 || function.decl.c_variadic {
+            if i < function.sig.inputs.len() - 1 || function.sig.is_c_variadic {
                 output.push_str(", ");
             }
         }
 
         // Variadic
-        if function.decl.c_variadic {
+        if function.sig.is_c_variadic {
             output.push_str("...");
         }
 
         output.push(')');
 
         // Return type
-        if let Some(return_type) = &function.decl.output {
+        if let Some(return_type) = &function.sig.output {
             output.push_str(&format!(" -> {}", format_type(return_type, data)));
         }
 
@@ -1140,7 +1136,7 @@ fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &
                             }
                             VariantKind::Struct {
                                 fields,
-                                fields_stripped,
+                                has_stripped_fields,
                             } => {
                                 output.push_str(" {\n");
                                 for field_id in fields {
@@ -1156,7 +1152,7 @@ fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &
                                         }
                                     }
                                 }
-                                if *fields_stripped {
+                                if *has_stripped_fields {
                                     output.push_str("        // Some fields omitted\n");
                                 }
                                 output.push_str("    }");
@@ -1173,7 +1169,7 @@ fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &
             }
         }
 
-        if enum_.variants_stripped {
+        if enum_.has_stripped_variants {
             output.push_str("    // Some variants omitted\n");
         }
 
@@ -1223,13 +1219,13 @@ fn format_impl_signature(output: &mut String, impl_: &Impl, data: &Crate) {
 
     // Trait reference if this is a trait impl
     if let Some(trait_) = &impl_.trait_ {
-        if impl_.negative {
+        if impl_.is_negative {
             output.push_str(" !");
         } else {
             output.push(' ');
         }
 
-        output.push_str(&trait_.name);
+        output.push_str(&trait_.path);
         if let Some(args) = &trait_.args {
             let mut args_str = String::new();
             format_generic_args(&mut args_str, args, data);
@@ -1248,7 +1244,7 @@ fn format_impl_signature(output: &mut String, impl_: &Impl, data: &Crate) {
     output.push_str(" {\n    /* Associated items */\n}");
 
     // Add note if this is a compiler-generated impl
-    if impl_.synthetic {
+    if impl_.is_synthetic {
         output.push_str("\n// Note: This impl is compiler-generated");
     }
 }
@@ -1305,7 +1301,7 @@ fn process_struct_details(output: &mut String, struct_: &Struct, _item: &Item, d
         }
         StructKind::Plain {
             fields,
-            fields_stripped,
+            has_stripped_fields,
         } => {
             // Use heading_level for Fields section
             output.push_str(&format!("{} Fields\n\n", "#".repeat(heading_level)));
@@ -1332,7 +1328,7 @@ fn process_struct_details(output: &mut String, struct_: &Struct, _item: &Item, d
                 }
             }
 
-            if *fields_stripped {
+            if *has_stripped_fields {
                 output.push_str("| *private fields* | ... | *Some fields have been omitted* |\n");
             }
 
@@ -1353,7 +1349,7 @@ fn process_struct_details(output: &mut String, struct_: &Struct, _item: &Item, d
             if let Some(impl_item) = data.index.get(&impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
-                        let trait_name = trait_.name.clone();
+                        let trait_name = trait_.path.clone();
                         trait_impls.entry(trait_name).or_insert_with(Vec::new).push(impl_id);
                     } else {
                         // Inherent impl
@@ -1508,7 +1504,7 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
                         }
                         VariantKind::Struct {
                             fields,
-                            fields_stripped,
+                            has_stripped_fields,
                         } => {
                             output.push_str("Fields:\n\n");
                             output.push_str("| Name | Type | Documentation |\n");
@@ -1534,7 +1530,7 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
                                 }
                             }
 
-                            if *fields_stripped {
+                            if *has_stripped_fields {
                                 output.push_str("| *private fields* | ... | *Some fields have been omitted* |\n");
                             }
 
@@ -1550,7 +1546,7 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
         }
     }
 
-    if enum_.variants_stripped {
+    if enum_.has_stripped_variants {
         output.push_str("*Note: Some variants have been omitted because they are private or hidden.*\n\n");
     }
 
@@ -1566,7 +1562,7 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
             if let Some(impl_item) = data.index.get(&impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
-                        let trait_name = trait_.name.clone();
+                        let trait_name = trait_.path.clone();
                         trait_impls.entry(trait_name).or_insert_with(Vec::new).push(impl_id);
                     } else {
                         // Inherent impl
@@ -1683,7 +1679,7 @@ fn process_union_details(output: &mut String, union_: &Union, _item: &Item, data
         }
     }
 
-    if union_.fields_stripped {
+    if union_.has_stripped_fields {
         output.push_str("| *private fields* | ... | *Some fields have been omitted* |\n");
     }
 
@@ -1701,7 +1697,7 @@ fn process_union_details(output: &mut String, union_: &Union, _item: &Item, data
             if let Some(impl_item) = data.index.get(&impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
-                        let trait_name = trait_.name.clone();
+                        let trait_name = trait_.path.clone();
                         trait_impls.entry(trait_name).or_insert_with(Vec::new).push(impl_id);
                     } else {
                         // Inherent impl
@@ -1761,7 +1757,7 @@ fn process_trait_details(output: &mut String, trait_: &Trait, _item: &Item, data
     if trait_.is_unsafe {
         output.push_str("> This trait is unsafe to implement.\n\n");
     }
-    if !trait_.is_object_safe {
+    if !trait_.is_dyn_compatible {
         output.push_str("> This trait is not object-safe and cannot be used in dynamic trait objects.\n\n");
     }
 
@@ -1784,8 +1780,8 @@ fn process_trait_details(output: &mut String, trait_: &Trait, _item: &Item, data
                         }
                     }
                     ItemEnum::AssocType { .. } => assoc_types.push(item_id),
-                    ItemEnum::AssocConst { type_: _, default } => {
-                        if default.is_some() {
+                    ItemEnum::AssocConst { type_: _, value } => {
+                        if value.is_some() {
                             // Has a default value
                             provided_methods.push(item_id);
                         } else {

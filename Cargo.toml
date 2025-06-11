@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "kargo-cli",
+    "kargo-plugin-api",
+    "kargo-plugin-builder",
+    "kargo-plugin-macros",
+    "kargo-kurate",
+    "kargo-mddoc",
+    "kargo-upgrade",
+    "kargo-walk",
+    "kargo-workspace"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Kargo Contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4.5.40", features = ["derive", "string"] }
+tokio = { version = "1.45", features = ["full"] }
+libloading = "0.8"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+extism = "1.11"
+log = "0.4"
+env_logger = "0.11"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+regex = "1"
+gag = "1.0"
+jwalk = "0.8"
+rayon = "1"
+toml_edit = "0.22"
+futures = "0.3"
+cargo_metadata = "0.20"
+tempfile = "3"
+directories = "6"
+serde_yaml = "0.9"

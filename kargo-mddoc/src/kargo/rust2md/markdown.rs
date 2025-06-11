@@ -1,6 +1,8 @@
 //! A module for converting rustdoc JSON into human-friendly Markdown documentation.
 
-use crate::docs::rustdoc_json_types::*;
+use rustdoc_types::{Crate, Id, Item, ItemEnum, Visibility, StructKind, VariantKind};
+use rustdoc_types::{Module, Struct, Enum, Union, Trait, Impl, Function, Type};
+use rustdoc_types::{Generics, GenericArg, GenericArgs, GenericBound, GenericParamDef, GenericParamDefKind};
 use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::fs;
@@ -401,13 +403,13 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         // but for brevity we'll just implement a subset here
         ItemEnum::Function(function) => {
             if let Some(name) = &item.name {
-                if function.header.is_const() {
+                if function.header.is_const {
                     output.push_str("const ");
                 }
-                if function.header.is_unsafe() {
+                if function.header.is_unsafe {
                     output.push_str("unsafe ");
                 }
-                if function.header.is_async() {
+                if function.header.is_async {
                     output.push_str("async ");
                 }
                 

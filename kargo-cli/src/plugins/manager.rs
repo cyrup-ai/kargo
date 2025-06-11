@@ -1,213 +1,173 @@
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use anyhow::{Context, Result};
-use kargo_plugin_api::{KargoPluginCommand, KargoPluginCreateFn};
 use libloading::{Library, Symbol};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use log::info;
+use std::process::Command;
+
+use kargo_plugin_api::{CreateFn, PluginCommand};
 
 use super::wasm_adapter::WasmPluginAdapter;
 
-/// A manifest file that describes one or more plugins.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PluginManifest {
-    /// Plugin manifests can describe multiple plugins in a single file
-    pub plugins: Vec<PluginDescriptor>,
-}
-
-/// Describes a single plugin and how to load it.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PluginDescriptor {
-    /// Unique name for this plugin
-    pub name: String,
-    /// Either "native_rust" or "wasm_extism"
-    #[serde(rename = "type")]
-    pub plugin_type: String,
-    /// Path to the .rlib/.so/.dylib (for native) or .wasm file
-    pub path: PathBuf,
-    /// Name of the exported function that creates the plugin instance (for native only)
-    /// Typically "_kargo_plugin_create"
-    #[serde(default = "default_entry_symbol")]
-    pub entry_symbol: String,
-}
-
-/// Default entry symbol name for native plugins
-fn default_entry_symbol() -> String {
-    "_kargo_plugin_create".to_string()
-}
-
-/// Manages the discovery, loading, and access to plugins.
 pub struct PluginManager {
-    /// Directories to search for plugin manifests
-    plugin_dirs: Vec<PathBuf>,
-    /// Loaded plugin instances by name
-    plugins: HashMap<String, Box<dyn KargoPluginCommand>>,
-    /// Loaded native libraries (kept alive to prevent unloading)
-    #[allow(dead_code)] // Needed to keep libraries in memory
-    native_libraries: Vec<Arc<Library>>,
+    search_paths: Vec<PathBuf>,
+    plugins: HashMap<String, Box<dyn PluginCommand>>,
+    _native_libs: Vec<Arc<Library>>, // keep libs alive
 }
 
 impl PluginManager {
-    /// Creates a new PluginManager with the default plugin directories.
     pub fn new() -> Self {
-        let mut plugin_dirs = Vec::new();
-        
-        // Check for user config directory
-        if let Some(config_dir) = dirs::config_dir() {
-            let user_plugin_dir = config_dir.join("kargo").join("plugins");
-            plugin_dirs.push(user_plugin_dir);
-        }
-        
-        // Check for project-local plugin directory
-        let local_plugin_dir = PathBuf::from(".kargo/plugins");
-        plugin_dirs.push(local_plugin_dir);
+        // 1) optional env override
+        use std::env;
+        let mut sp = env::var_os("KARGO_PLUGIN_PATH")
+            .map(|v| env::split_paths(&v).collect())
+            .unwrap_or_else(Vec::new);
 
-        // Add any embedded/bundled plugin directory if applicable
-        // This would be a directory shipped with the kargo binary
-        
+        if let Some(cfg) = dirs::config_dir() {
+            sp.push(cfg.join("kargo").join("plugins"));
+        }
+        sp.push(PathBuf::from(".kargo/plugins"));
         Self {
-            plugin_dirs,
+            search_paths: sp,
             plugins: HashMap::new(),
-            native_libraries: Vec::new(),
+            _native_libs: vec![],
         }
     }
 
-    /// Add a custom directory to search for plugins
-    pub fn add_plugin_dir(&mut self, dir: PathBuf) {
-        self.plugin_dirs.push(dir);
-    }
-
-    /// Discover and load all plugins from configured plugin directories
     pub fn discover_and_load_plugins(&mut self) -> Result<()> {
-        for dir in &self.plugin_dirs {
-            // Skip if directory doesn't exist
-            if !dir.exists() || !dir.is_dir() {
+        let search_paths = self.search_paths.clone();
+        for d in &search_paths {
+            if !d.is_dir() {
                 continue;
             }
-
-            // Find all plugin manifests in this directory
-            let manifest_files = find_manifest_files(dir)?;
-            for manifest_path in manifest_files {
-                self.load_plugins_from_manifest(&manifest_path)
-                    .with_context(|| format!("Failed to load plugins from manifest: {}", manifest_path.display()))?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Load specific plugins from a manifest file
-    pub fn load_plugins_from_manifest(&mut self, manifest_path: &Path) -> Result<()> {
-        let manifest_content = fs::read_to_string(manifest_path)
-            .with_context(|| format!("Failed to read manifest file: {}", manifest_path.display()))?;
-        
-        let manifest: PluginManifest = toml::from_str(&manifest_content)
-            .with_context(|| format!("Failed to parse manifest file: {}", manifest_path.display()))?;
-        
-        // Use the manifest's directory as the base for relative paths
-        let base_dir = manifest_path.parent().unwrap_or(Path::new("."));
-        
-        for plugin_desc in manifest.plugins {
-            // Resolve relative paths against the manifest directory
-            let plugin_path = if plugin_desc.path.is_relative() {
-                base_dir.join(&plugin_desc.path)
-            } else {
-                plugin_desc.path
-            };
-
-            match plugin_desc.plugin_type.as_str() {
-                "native_rust" => {
-                    self.load_native_plugin(&plugin_desc.name, &plugin_path, &plugin_desc.entry_symbol)?;
-                },
-                "wasm_extism" => {
-                    self.load_wasm_plugin(&plugin_desc.name, &plugin_path)?;
-                },
-                _ => {
-                    return Err(anyhow::anyhow!(
-                        "Unsupported plugin type '{}' for plugin '{}'", 
-                        plugin_desc.plugin_type, 
-                        plugin_desc.name
-                    ));
+            info!("Scanning {}", d.display());
+            for entry in fs::read_dir(d)? {
+                let path = entry?.path();
+                if path.is_dir() && path.join("Cargo.toml").is_file() {
+                    self.build_and_load_rust_project(&path)
+                        .with_context(|| format!("Rust plugin {}", path.display()))?;
+                } else {
+                    println!("DEBUG: Found file: {}", path.display());
+                    match path.extension().and_then(OsStr::to_str) {
+                        Some("so" | "dylib" | "dll") => {
+                            println!("DEBUG: Loading native plugin: {}", path.display());
+                            match self.load_native(&path) {
+                                Ok(_) => println!("DEBUG: Successfully loaded: {}", path.display()),
+                                Err(e) => println!("DEBUG: Failed to load: {} - {}", path.display(), e),
+                            }
+                        },
+                        Some("wasm") => {
+                            println!("DEBUG: Loading WASM plugin: {}", path.display());
+                            match self.load_wasm(&path) {
+                                Ok(_) => println!("DEBUG: Successfully loaded: {}", path.display()),
+                                Err(e) => println!("DEBUG: Failed to load: {} - {}", path.display(), e),
+                            }
+                        },
+                        _ => {}
+                    }
                 }
             }
         }
-
         Ok(())
     }
 
-    /// Load a native Rust plugin from a dynamic library
-    pub fn load_native_plugin(&mut self, name: &str, path: &Path, entry_symbol: &str) -> Result<()> {
-        // Load the dynamic library
-        let library = Arc::new(unsafe { Library::new(path).with_context(|| format!("Failed to load library: {}", path.display()))? });
-        
-        // Get the plugin creation function
-        let create_fn: Symbol<KargoPluginCreateFn> = unsafe {
-            library.get(entry_symbol.as_bytes())
-                .with_context(|| format!("Failed to find entry symbol '{}' in library: {}", entry_symbol, path.display()))?
-        };
-        
-        // Call the function to create the plugin instance
-        let plugin = create_fn();
-        
-        // Store the plugin and keep the library alive
-        self.plugins.insert(name.to_string(), plugin);
-        self.native_libraries.push(library);
-        
-        Ok(())
-    }
-
-    /// Load a WASM plugin using Extism
-    pub fn load_wasm_plugin(&mut self, name: &str, path: &Path) -> Result<()> {
-        // Create a wrapper for the WASM plugin
-        let wasm_plugin = WasmPluginAdapter::new(path)
-            .with_context(|| format!("Failed to create WASM plugin adapter for: {}", path.display()))?;
-        
-        // Store the plugin
-        self.plugins.insert(name.to_string(), Box::new(wasm_plugin));
-        
-        Ok(())
-    }
-
-    /// Register a plugin manually (useful for built-in plugins)
-    pub fn register_plugin(&mut self, name: &str, plugin: Box<dyn KargoPluginCommand>) {
-        self.plugins.insert(name.to_string(), plugin);
-    }
-
-    /// Get a reference to a plugin by name
-    pub fn get_plugin(&self, name: &str) -> Option<&Box<dyn KargoPluginCommand>> {
+    pub fn get(&self, name: &str) -> Option<&Box<dyn PluginCommand>> {
         self.plugins.get(name)
     }
 
-    /// Get all registered plugins
-    pub fn get_all_plugins(&self) -> Vec<(&String, &Box<dyn KargoPluginCommand>)> {
-        self.plugins.iter().collect()
+    pub fn plugins_iter(&self) -> impl Iterator<Item = (&String, &Box<dyn PluginCommand>)> {
+        self.plugins.iter()
+    }
+
+    /* -------- raw Rust project -------- */
+    fn build_and_load_rust_project(&mut self, dir: &Path) -> Result<()> {
+        info!("Compiling plugin at {}", dir.display());
+
+        let needs_build = {
+            let artifact = find_existing_lib(dir)?;
+            match artifact {
+                None => true,
+                Some(ref art) => {
+                    let src_max = fs::read_dir(dir)?
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.metadata().and_then(|m| m.modified()))
+                        .flatten()
+                        .max();
+                    let art_mod = fs::metadata(art).and_then(|m| m.modified()).ok();
+                    src_max.zip(art_mod).map(|(s, o)| s > o).unwrap_or(true)
+                }
+            }
+        };
+
+        if needs_build {
+            let status = Command::new("cargo")
+                .arg("build")
+                .arg("--release")
+                .arg("--lib")
+                .arg("--manifest-path")
+                .arg(dir.join("Cargo.toml"))
+                .status()?;
+            if !status.success() {
+                anyhow::bail!("cargo build failed for {}", dir.display());
+            }
+        }
+
+        let lib = find_existing_lib(dir)?
+            .ok_or_else(|| anyhow::anyhow!("built lib not found for {}", dir.display()))?;
+        self.load_native(&lib)
+    }
+
+    /* -------- existing native lib -------- */
+    fn load_native(&mut self, file: &Path) -> Result<()> {
+        let lib = unsafe { Library::new(file) }?;
+        let arc = Arc::new(lib);
+        let ctor: Symbol<CreateFn> = unsafe { arc.get(b"kargo_plugin_create") }?;
+        let plugin = ctor();
+        self.plugins
+            .insert(plugin.clap().get_name().to_owned(), plugin);
+        self._native_libs.push(arc);
+        Ok(())
+    }
+
+    fn load_wasm(&mut self, file: &Path) -> Result<()> {
+        let adapt = WasmPluginAdapter::new(file)?;
+        self.plugins
+            .insert(adapt.clap().get_name().to_owned(), Box::new(adapt));
+        Ok(())
     }
 }
 
-/// Find all plugin manifest files (plugin_manifest.toml) in a directory
-fn find_manifest_files(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut manifest_files = Vec::new();
-    
-    if !dir.exists() || !dir.is_dir() {
-        return Ok(manifest_files);
+/* ---------- helper: locate compiled library ---------- */
+fn find_existing_lib(dir: &Path) -> Result<Option<PathBuf>> {
+    let release = dir.join("target").join("release");
+    if !release.is_dir() {
+        return Ok(None);
     }
-    
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.is_dir() {
-            // Recurse one level into subdirectories
-            let sub_manifests = find_manifest_files(&path)?;
-            manifest_files.extend(sub_manifests);
-        } else if path.is_file() && path.file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| name == "plugin_manifest.toml")
-            .unwrap_or(false) {
-            manifest_files.push(path);
+
+    let (prefix, ext) = if cfg!(windows) {
+        ("", "dll")
+    } else if cfg!(target_os = "macos") {
+        ("lib", "dylib")
+    } else {
+        ("lib", "so")
+    };
+
+    for entry in fs::read_dir(release)? {
+        let p = entry?.path();
+        if p.extension().and_then(|s| s.to_str()) == Some(ext)
+            && p.file_name()
+                .and_then(|s| s.to_str())
+                .map(|f| f.starts_with(prefix))
+                .unwrap_or(false)
+        {
+            return Ok(Some(p));
         }
     }
-    
-    Ok(manifest_files)
+    Ok(None)
 }

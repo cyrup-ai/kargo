@@ -2,13 +2,14 @@
 
 use crate::{
     types::{CrateType, DependencyUpdate, UpdateOptions, UpdateResult},
+    models::{Dependency, DependencyLocation},
     crates_io::get_latest_version,
 };
 use anyhow::Result;
 use regex::Regex;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs;
-use toml_edit::{Document, Item, Value as TomlValue};
+use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 /// Update dependencies in a Cargo.toml file
 pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) -> Result<UpdateResult> {
@@ -16,7 +17,7 @@ pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) 
 
     // Read the Cargo.toml content
     let content = fs::read_to_string(&path).await?;
-    let mut document = content.parse::<toml_edit::Document>()?;
+    let mut document = content.parse::<DocumentMut>()?;
 
     // Track updates for reporting
     let mut updates = Vec::new();
@@ -39,7 +40,7 @@ pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) 
                     .collect();
 
                 for (name, value) in deps {
-                    if let Some(update) = update_dependency(&name, value).await? {
+                    if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDirect).await? {
                         updates.push(update);
                     }
                 }
@@ -61,26 +62,24 @@ pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) 
                     continue;
                 }
 
-                if let Some(update) = update_dependency(&name, value).await? {
+                if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDirect).await? {
                     updates.push(update);
                 }
             }
         }
     }
 
-    // Update dev-dependencies if not direct_only
-    if !options.direct_only {
-        if let Some(deps) = document.get_mut("dev-dependencies") {
-            if let Some(deps_table) = deps.as_table_mut() {
-                // Convert the iterator to a Vec first to make it Send
-                let deps: Vec<_> = deps_table.iter_mut()
-                    .map(|(key, value)| (key.to_string(), value))
-                    .collect();
+    // Update dev-dependencies
+    if let Some(deps) = document.get_mut("dev-dependencies") {
+        if let Some(deps_table) = deps.as_table_mut() {
+            // Convert the iterator to a Vec first to make it Send
+            let deps: Vec<_> = deps_table.iter_mut()
+                .map(|(key, value)| (key.to_string(), value))
+                .collect();
 
-                for (name, value) in deps {
-                    if let Some(update) = update_dependency(&name, value).await? {
-                        updates.push(update);
-                    }
+            for (name, value) in deps {
+                if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDev).await? {
+                    updates.push(update);
                 }
             }
         }
@@ -100,7 +99,7 @@ pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) 
 }
 
 /// Update a single dependency to its latest version
-async fn update_dependency(name: &str, value: &mut Item) -> Result<Option<DependencyUpdate>> {
+async fn update_dependency(name: &str, value: &mut Item, location: DependencyLocation) -> Result<Option<DependencyUpdate>> {
     // Extract the current version
     let current_version = match value {
         // Simple string version like version = "1.0.0"
@@ -148,8 +147,13 @@ async fn update_dependency(name: &str, value: &mut Item) -> Result<Option<Depend
         // Return the update information
         Ok(Some(DependencyUpdate {
             name: name.to_string(),
-            from_version: current_version,
+            from_version: current_version.clone(),
             to_version: latest_version,
+            dependency: Dependency {
+                name: name.to_string(),
+                version: current_version,
+                location,
+            },
         }))
     } else {
         Ok(None)
@@ -174,7 +178,7 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
             let mut updated_cargo_content = cargo_content.to_string();
 
             // Helper function to update dependencies in a section
-            let update_deps_in_section = |section_name: &str, content: &str, options: &UpdateOptions| -> Result<Vec<DependencyUpdate>> {
+            async fn update_deps_in_section(section_name: &str, content: &str, _options: &UpdateOptions) -> Result<Vec<DependencyUpdate>> {
                 let mut section_updates = Vec::new();
                 let deps_section_regex = Regex::new(&format!(r"(?s)\[{}\](.*?)(?:\n\s*\[|\z)", section_name)).unwrap();
 
@@ -182,7 +186,7 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                     let deps_content = deps_section.get(1).unwrap().as_str();
 
                     // First, handle simple format: name = "version"
-                    let simple_dep_regex = Regex::new(r#"^(\w+)\s*=\s*["']([^"']+)["']"#m).unwrap();
+                    let simple_dep_regex = Regex::new(r#"(?m)^(\w+)\s*=\s*["']([^"']+)["']"#).unwrap();
                     for cap in simple_dep_regex.captures_iter(deps_content) {
                         let name = cap.get(1).unwrap().as_str();
                         let version = cap.get(2).unwrap().as_str();
@@ -193,14 +197,21 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                                 section_updates.push(DependencyUpdate {
                                     name: name.to_string(),
                                     from_version: version.to_string(),
-                                    to_version: latest,
+                                    to_version: latest.clone(),
+                                    dependency: Dependency {
+                                        name: name.to_string(),
+                                        version: version.to_string(),
+                                        location: DependencyLocation::RustScriptCargo {
+                                            section_range: (0, 0), // Will be updated later
+                                        },
+                                    },
                                 });
                             }
                         }
                     }
 
                     // Second, handle table format: name = { version = "version", ... }
-                    let table_dep_regex = Regex::new(r#"(?s)^(\w+)\s*=\s*\{(.*?)version\s*=\s*["']([^"']+)["']"#m).unwrap();
+                    let table_dep_regex = Regex::new(r#"(?sm)^(\w+)\s*=\s*\{(.*?)version\s*=\s*["']([^"']+)["']"#).unwrap();
                     for cap in table_dep_regex.captures_iter(deps_content) {
                         let name = cap.get(1).unwrap().as_str();
                         let version = cap.get(3).unwrap().as_str();
@@ -211,7 +222,14 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                                 section_updates.push(DependencyUpdate {
                                     name: name.to_string(),
                                     from_version: version.to_string(),
-                                    to_version: latest,
+                                    to_version: latest.clone(),
+                                    dependency: Dependency {
+                                        name: name.to_string(),
+                                        version: version.to_string(),
+                                        location: DependencyLocation::RustScriptCargo {
+                                            section_range: (0, 0), // Will be updated later
+                                        },
+                                    },
                                 });
                             }
                         }
@@ -219,16 +237,14 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                 }
 
                 Ok(section_updates)
-            };
+            }
 
             // Update dependencies section
             let mut all_updates = update_deps_in_section("dependencies", &cargo_content, options).await?;
 
-            // Update dev-dependencies section if not direct_only
-            if !options.direct_only {
-                let dev_updates = update_deps_in_section("dev-dependencies", &cargo_content, options).await?;
-                all_updates.extend(dev_updates);
-            }
+            // Update dev-dependencies section
+            let dev_updates = update_deps_in_section("dev-dependencies", &cargo_content, options).await?;
+            all_updates.extend(dev_updates);
 
             // Apply all the updates to the content
             for update in &all_updates {
@@ -240,7 +256,7 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                     &format!("${{1}}\"{}\"", update.to_version)).to_string();
 
                 // Update table format
-                let table_regex = Regex::new(&format!(r#"({}\s*=\s*\{{.*?version\s*=\s*)["']{}["']"#s,
+                let table_regex = Regex::new(&format!(r#"(?s)({}\s*=\s*\{{.*?version\s*=\s*)["']{}["']"#,
                                                    regex::escape(&update.name),
                                                    regex::escape(&update.from_version))).unwrap();
                 updated_cargo_content = table_regex.replace_all(&updated_cargo_content,
@@ -261,7 +277,7 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
     if let Some(captures) = cargo_deps_regex.captures(&content) {
         if let Some(deps_match) = captures.get(1) {
             let deps_str = deps_match.as_str();
-            let deps_span = deps_match.range();
+            let _deps_span = deps_match.range();
 
             // Parse the dependencies string
             let mut updated_deps = deps_str.to_string();
@@ -279,6 +295,13 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                             name: name.to_string(),
                             from_version: version.to_string(),
                             to_version: latest.clone(),
+                            dependency: Dependency {
+                                name: name.to_string(),
+                                version: version.to_string(),
+                                location: DependencyLocation::RustScriptDeps {
+                                    line_range: (0, 0), // Will be calculated
+                                },
+                            },
                         };
 
                         // Handle different spacing patterns in the replacement
@@ -333,6 +356,13 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                         name: name.to_string(),
                         from_version: "none".to_string(),
                         to_version: latest.clone(),
+                        dependency: Dependency {
+                            name: name.to_string(),
+                            version: "none".to_string(),
+                            location: DependencyLocation::RustScriptDeps {
+                                line_range: (0, 0), // Will be calculated
+                            },
+                        },
                     };
 
                     // Replace the bare dependency with a versioned one

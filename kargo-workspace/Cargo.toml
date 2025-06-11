@@ -1,6 +1,10 @@
 [package]
-name = "kargo-workspsace"
-version = "0.1.0"
-edition = "2024"
+name = "kargo-workspace"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "kargo-workspace"
+path = "src/main.rs"
 
 [dependencies]

@@ -19,6 +19,7 @@ pub mod cli;
 mod commands;
 pub mod config;
 pub mod events;
+pub mod plugins;
 pub mod project;
 pub mod rustscript;
 pub mod vendor;
@@ -26,10 +27,12 @@ pub mod vendor;
 // Export types for convenience
 pub use project::{ProjectAnalyzer, ProjectType};
 pub use rustscript::RustScript;
-pub use up2date::types::{
-    CrateType, DependencyUpdate, SendFuture, UpdateCollector, UpdateResult, UpdateSession,
-    UpdateWatcher, VersionUpdater, VersionUpdaterOptions,
-};
+// These types would come from kargo-upgrade if we were using it
+// For now, we'll comment them out until we integrate kargo-upgrade
+// pub use kargo_upgrade::types::{
+//     CrateType, DependencyUpdate, SendFuture, UpdateCollector, UpdateResult, UpdateSession,
+//     UpdateWatcher, VersionUpdater, VersionUpdaterOptions,
+// };
 
 // Domain-specific type for representing an update job
 pub struct DependencyUpdateJob<'a> {
@@ -75,16 +78,12 @@ impl DependencyUpdater {
         let scan_dirs = std::env::var("KRATER_SCAN")
             .map(|dirs| dirs.split(':').map(PathBuf::from).collect())
             .unwrap_or_else(|_| {
-                vec![
-                    std::env::var("HOME")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|_| {
-                            log::warn!(
-                                "HOME environment variable not set, using current directory"
-                            );
-                            PathBuf::from(".")
-                        }),
-                ]
+                vec![std::env::var("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        log::warn!("HOME environment variable not set, using current directory");
+                        PathBuf::from(".")
+                    })]
             });
 
         info!("Scanning directories: {:?}", scan_dirs);

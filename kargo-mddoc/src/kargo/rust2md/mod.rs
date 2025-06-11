@@ -1,16 +1,14 @@
-pub mod rustdoc_json_types;
 mod markdown;
 mod types;
 
 use crate::config::Config;
-use crate::events::{Event, EventBus};
 use anyhow::{Context, Result};
 use log::{info, warn};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command
-
+use std::process::Command;
+use toml_edit;
 
 pub use markdown::rustdoc_json_to_markdown;
 pub use types::*;
@@ -18,12 +16,11 @@ pub use types::*;
 /// Generator for package documentation
 pub struct DocGenerator {
     config: Config,
-    events: EventBus,
 }
 
 impl DocGenerator {
-    pub fn new(config: Config, events: EventBus) -> Self {
-        Self { config, events }
+    pub fn new(config: Config) -> Self {
+        Self { config }
     }
 
     /// Generate Markdown documentation for a crate
@@ -56,9 +53,7 @@ impl DocGenerator {
             .context(format!("Failed to write markdown to {}", output_path.display()))?;
         
         // Report success
-        let _ = self.events.publish(Event::Info { 
-            message: format!("Generated documentation for {} at {}", package_name, output_path.display()) 
-        });
+        info!("Generated documentation for {} at {}", package_name, output_path.display());
         
         Ok(output_path)
     }

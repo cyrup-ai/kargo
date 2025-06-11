@@ -1,6 +1,6 @@
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
-use serde_yaml_ok as serde_yaml;
+use serde_yaml;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
