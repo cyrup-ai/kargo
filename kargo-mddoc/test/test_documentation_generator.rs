@@ -17,7 +17,7 @@ fn test_extract_package_name() {
         edition = "2021"
     "#;
     
-    let name = generator.extract_package_name(content).unwrap();
+    let name = generator.extract_package_name(content).expect("Failed to extract package name from Cargo.toml content");
     assert_eq!(name, "test-crate");
 }
 
@@ -28,14 +28,14 @@ fn test_get_output_path() {
     let generator = DocGenerator::new(config, events);
     
     // Temporarily set KNOWLEDGE_BASE_ROOT_DIR
-    let temp_dir = tempdir().unwrap();
-    let kb_root = temp_dir.path().to_str().unwrap();
+    let temp_dir = tempdir().expect("Failed to create temporary directory");
+    let kb_root = temp_dir.path().to_str().expect("Failed to convert temp directory path to string");
     std::env::set_var("KNOWLEDGE_BASE_ROOT_DIR", kb_root);
     
-    let output_path = generator.get_output_path("test-package").unwrap();
+    let output_path = generator.get_output_path("test-package").expect("Failed to get output path for documentation");
     
     // Check path structure
-    assert!(output_path.to_str().unwrap().contains("rust/crates/test-package/README.md"));
+    assert!(output_path.to_str().expect("Failed to convert output path to string").contains("rust/crates/test-package/README.md"));
     
     // Clean up
     std::env::remove_var("KNOWLEDGE_BASE_ROOT_DIR");

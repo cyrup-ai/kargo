@@ -29,10 +29,38 @@ impl PluginManager {
             .map(|v| env::split_paths(&v).collect())
             .unwrap_or_else(Vec::new);
 
+        // 2) In development, auto-discover workspace siblings
+        if sp.is_empty() && cfg!(debug_assertions) {
+            if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
+                let workspace_root = PathBuf::from(manifest_dir).parent().map(|p| p.to_path_buf());
+                if let Some(root) = workspace_root {
+                    info!("Development mode: discovering workspace plugins in {}", root.display());
+                    // Add all directories with Cargo.toml as potential plugin paths
+                    if let Ok(entries) = fs::read_dir(&root) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() && path.join("Cargo.toml").exists() {
+                                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                    // Skip self
+                                    if name == "kargo-cli" {
+                                        continue;
+                                    }
+                                    info!("Found potential plugin: {}", name);
+                                    sp.push(path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3) Default search paths
         if let Some(cfg) = dirs::config_dir() {
             sp.push(cfg.join("kargo").join("plugins"));
         }
         sp.push(PathBuf::from(".kargo/plugins"));
+        
         Self {
             search_paths: sp,
             plugins: HashMap::new(),
@@ -46,6 +74,18 @@ impl PluginManager {
             if !d.is_dir() {
                 continue;
             }
+            
+            // Check if this directory itself is a plugin (for workspace siblings)
+            if d.join("Cargo.toml").is_file() {
+                info!("Loading plugin project: {}", d.display());
+                match self.build_and_load_rust_project(&d) {
+                    Ok(_) => info!("Successfully loaded plugin from {}", d.display()),
+                    Err(e) => info!("Failed to load plugin from {}: {}", d.display(), e),
+                }
+                continue;
+            }
+            
+            // Otherwise scan for subdirectories (for .kargo/plugins style)
             info!("Scanning {}", d.display());
             for entry in fs::read_dir(d)? {
                 let path = entry?.path();
@@ -53,20 +93,17 @@ impl PluginManager {
                     self.build_and_load_rust_project(&path)
                         .with_context(|| format!("Rust plugin {}", path.display()))?;
                 } else {
-                    println!("DEBUG: Found file: {}", path.display());
                     match path.extension().and_then(OsStr::to_str) {
                         Some("so" | "dylib" | "dll") => {
-                            println!("DEBUG: Loading native plugin: {}", path.display());
                             match self.load_native(&path) {
-                                Ok(_) => println!("DEBUG: Successfully loaded: {}", path.display()),
-                                Err(e) => println!("DEBUG: Failed to load: {} - {}", path.display(), e),
+                                Ok(_) => info!("Successfully loaded native plugin: {}", path.display()),
+                                Err(e) => info!("Failed to load native plugin {}: {}", path.display(), e),
                             }
                         },
                         Some("wasm") => {
-                            println!("DEBUG: Loading WASM plugin: {}", path.display());
                             match self.load_wasm(&path) {
-                                Ok(_) => println!("DEBUG: Successfully loaded: {}", path.display()),
-                                Err(e) => println!("DEBUG: Failed to load: {} - {}", path.display(), e),
+                                Ok(_) => info!("Successfully loaded WASM plugin: {}", path.display()),
+                                Err(e) => info!("Failed to load WASM plugin {}: {}", path.display(), e),
                             }
                         },
                         _ => {}
@@ -74,6 +111,12 @@ impl PluginManager {
                 }
             }
         }
+        
+        info!("Total plugins loaded: {}", self.plugins.len());
+        for (name, _) in &self.plugins {
+            info!("  - {}", name);
+        }
+        
         Ok(())
     }
 
@@ -100,7 +143,10 @@ impl PluginManager {
                         .flatten()
                         .max();
                     let art_mod = fs::metadata(art).and_then(|m| m.modified()).ok();
-                    src_max.zip(art_mod).map(|(s, o)| s > o).unwrap_or(true)
+                    match src_max.zip(art_mod) {
+                        Some((s, o)) => s > o,
+                        None => true,
+                    }
                 }
             }
         };
@@ -145,7 +191,22 @@ impl PluginManager {
 
 /* ---------- helper: locate compiled library ---------- */
 fn find_existing_lib(dir: &Path) -> Result<Option<PathBuf>> {
-    let release = dir.join("target").join("release");
+    // First try the local target directory
+    let mut release = dir.join("target").join("release");
+    
+    // If not found, try the workspace target directory
+    if !release.is_dir() {
+        // Walk up to find workspace root (where Cargo.lock exists)
+        let mut workspace_root = dir.to_path_buf();
+        while !workspace_root.join("Cargo.lock").exists() && workspace_root.parent().is_some() {
+            workspace_root = workspace_root
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Workspace root has no parent directory"))?
+                .to_path_buf();
+        }
+        release = workspace_root.join("target").join("release");
+    }
+    
     if !release.is_dir() {
         return Ok(None);
     }
@@ -158,16 +219,39 @@ fn find_existing_lib(dir: &Path) -> Result<Option<PathBuf>> {
         ("lib", "so")
     };
 
-    for entry in fs::read_dir(release)? {
-        let p = entry?.path();
-        if p.extension().and_then(|s| s.to_str()) == Some(ext)
-            && p.file_name()
-                .and_then(|s| s.to_str())
-                .map(|f| f.starts_with(prefix))
-                .unwrap_or(false)
+    // Get the crate name from Cargo.toml
+    let cargo_toml = dir.join("Cargo.toml");
+    let crate_name = if cargo_toml.exists() {
+        let content = fs::read_to_string(&cargo_toml)?;
+        // Simple extraction of lib.name or package.name
+        if let Some(lib_name) = content.lines()
+            .skip_while(|l| !l.starts_with("[lib]"))
+            .skip(1)
+            .find(|l| l.trim_start().starts_with("name"))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|s| s.trim().trim_matches('"'))
         {
-            return Ok(Some(p));
+            lib_name.to_string()
+        } else if let Some(pkg_name) = content.lines()
+            .find(|l| l.trim_start().starts_with("name") && !l.contains('['))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|s| s.trim().trim_matches('"'))
+        {
+            pkg_name.replace('-', "_")
+        } else {
+            return Ok(None);
         }
+    } else {
+        return Ok(None);
+    };
+
+    // Look for the specific library file
+    let lib_name = format!("{}{}.{}", prefix, crate_name, ext);
+    let lib_path = release.join(&lib_name);
+    
+    if lib_path.exists() {
+        Ok(Some(lib_path))
+    } else {
+        Ok(None)
     }
-    Ok(None)
 }

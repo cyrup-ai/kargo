@@ -26,7 +26,13 @@ pub enum HostFunctionResponse {
 // Host function for logging
 host_fn!(log_fn(user_data: mpsc::Sender<HostFunctionRequest>; msg: String) {
     let tx = user_data.get()?;
-    let tx = tx.lock().unwrap();
+    let tx = match tx.lock() {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("Failed to lock tx mutex: {}", e);
+            return Ok(());
+        }
+    };
     let (sx, rx) = oneshot::channel();
     let _ = tx.blocking_send(HostFunctionRequest::Log{msg, reply:sx});
     let _ = rx.blocking_recv();
@@ -36,7 +42,13 @@ host_fn!(log_fn(user_data: mpsc::Sender<HostFunctionRequest>; msg: String) {
 // Host function for reading files
 host_fn!(read_file_fn(user_data: mpsc::Sender<HostFunctionRequest>; path: String) -> String {
     let tx = user_data.get()?;
-    let tx = tx.lock().unwrap();
+    let tx = match tx.lock() {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("Failed to lock tx mutex: {}", e);
+            return Err(Error::msg(format!("Failed to lock tx mutex: {}", e)));
+        }
+    };
     let (sx, rx) = oneshot::channel();
     let _ = tx.blocking_send(HostFunctionRequest::ReadFile{
         path: PathBuf::from(path),

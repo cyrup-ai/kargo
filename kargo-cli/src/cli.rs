@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::{env, path::PathBuf};
 
 use crate::plugins::manager::PluginManager;
@@ -46,9 +46,15 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
             }
         }
         Some((name, sub)) => {
-            let plugin = pm.get(name).expect("subcommand present");
+            let plugin = pm.get(name)
+                .ok_or_else(|| anyhow::anyhow!("Plugin '{}' was registered but not found in manager", name))?;
+            
+            // Gather args and prepend the subcommand name
+            let mut args = vec![name.to_string()];
+            args.extend(gather_raw_args(sub));
+            
             let ctx = ExecutionContext {
-                matched_args: gather_raw_args(sub),
+                matched_args: args,
                 current_dir: env::current_dir()?,
                 config_dir: dirs::config_dir()
                     .unwrap_or_else(|| PathBuf::from("."))
@@ -62,11 +68,21 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
 }
 
 fn gather_raw_args(m: &ArgMatches) -> Vec<String> {
-    m.ids()
-        .flat_map(|id| {
-            m.get_raw(id.as_str())
-                .into_iter()
-                .flat_map(|vals| vals.map(|v| v.to_string_lossy().into_owned()))
-        })
-        .collect()
+    // Get the original command line arguments, excluding the program name and subcommand
+    let args: Vec<String> = std::env::args()
+        .skip(2)  // Skip "kargo" and "mddoc" (or whatever subcommand)
+        .collect();
+    
+    // If no args were captured from env, fall back to reconstructing from ArgMatches
+    if args.is_empty() {
+        m.ids()
+            .flat_map(|id| {
+                m.get_raw(id.as_str())
+                    .into_iter()
+                    .flat_map(|vals| vals.map(|v| v.to_string_lossy().into_owned()))
+            })
+            .collect()
+    } else {
+        args
+    }
 }

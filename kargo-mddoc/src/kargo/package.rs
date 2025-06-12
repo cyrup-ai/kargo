@@ -62,8 +62,11 @@ impl PackageSpec {
         // Check using a regex for valid crate names
         // Rust crate names can contain alphanumeric characters, - and _
         // They cannot start with a digit, - or _
-        let re = Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$").unwrap();
-        re.is_match(name)
+        lazy_static::lazy_static! {
+            static ref CRATE_NAME_RE: Regex = Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+                .expect("Invalid regex for crate name validation");
+        }
+        CRATE_NAME_RE.is_match(name)
     }
 
     /// Get the package version as a dependency specification string
@@ -105,51 +108,5 @@ impl fmt::Display for PackageSpec {
             Some(version) => write!(f, "{}@{}", self.name, version),
             None => write!(f, "{}", self.name),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_package_name_only() {
-        let spec = PackageSpec::parse("tokio").unwrap();
-        assert_eq!(spec.name, "tokio");
-        assert_eq!(spec.version, None);
-    }
-
-    #[test]
-    fn test_parse_package_with_version() {
-        let spec = PackageSpec::parse("tokio@1.28.0").unwrap();
-        assert_eq!(spec.name, "tokio");
-        assert_eq!(spec.version, Some("1.28.0".to_string()));
-    }
-
-    #[test]
-    fn test_invalid_package_name() {
-        assert!(PackageSpec::parse("").is_err());
-        assert!(PackageSpec::parse("1invalid").is_err());
-        assert!(PackageSpec::parse("invalid@1.0@extra").is_err());
-    }
-
-    #[test]
-    fn test_version_spec() {
-        let spec1 = PackageSpec::parse("tokio").unwrap();
-        assert_eq!(spec1.version_spec(), "\"*\"");
-
-        let spec2 = PackageSpec::parse("tokio@1.28.0").unwrap();
-        assert_eq!(spec2.version_spec(), "\"1.28.0\"");
-    }
-
-    #[test]
-    fn test_output_filenames() {
-        let spec1 = PackageSpec::parse("tokio").unwrap();
-        assert_eq!(spec1.json_filename(), "tokio.json");
-        assert_eq!(spec1.markdown_filename(), "tokio.md");
-
-        let spec2 = PackageSpec::parse("tokio@1.28.0").unwrap();
-        assert_eq!(spec2.json_filename(), "tokio-1.28.0.json");
-        assert_eq!(spec2.markdown_filename(), "tokio-1.28.0.md");
     }
 }

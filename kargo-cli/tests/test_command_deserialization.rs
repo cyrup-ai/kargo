@@ -23,7 +23,7 @@ fn test_command_from_json() {
         "version": "1.0.0"
     });
 
-    let json_str2 = serde_json::to_string(&json_value).unwrap();
+    let json_str2 = serde_json::to_string(&json_value).expect("Failed to serialize JSON value to string");
     let result2: Result<Command, _> = serde_json::from_str(&json_str2);
 
     match result2 {

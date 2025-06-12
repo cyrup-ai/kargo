@@ -116,7 +116,7 @@ impl DependencyUpdater {
     }
 
     // Non-async interface that returns a domain-specific type
-    pub fn run(&self) -> DependencyUpdateJob {
+    pub fn run(&self) -> DependencyUpdateJob<'_> {
         let backup = if self.config.rollback_on_failure {
             match BackupManager::new(self.events.clone()) {
                 Ok(bm) => Some(bm),

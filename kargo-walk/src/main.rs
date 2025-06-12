@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cargo_toml::Manifest;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use jwalk::WalkDir;
@@ -118,7 +118,10 @@ fn extract_project_info(
         }
 
         if let Ok(info) = project_info {
-            projects.lock().unwrap().push(info);
+            match projects.lock() {
+                Ok(mut proj) => proj.push(info),
+                Err(e) => eprintln!("Failed to lock projects mutex: {}", e),
+            }
         } else {
             println!("Warning: Failed to extract info from {:?}", path);
         }
@@ -128,7 +131,13 @@ fn extract_project_info(
 
     pb.finish_with_message("Project information extracted");
 
-    Ok(Arc::try_unwrap(projects).unwrap().into_inner().unwrap())
+    match Arc::try_unwrap(projects) {
+        Ok(mutex) => match mutex.into_inner() {
+            Ok(data) => Ok(data),
+            Err(e) => Err(anyhow!("Failed to extract data from mutex: {}", e)),
+        },
+        Err(_) => Err(anyhow!("Failed to unwrap Arc - still has multiple references")),
+    }
 }
 
 fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
@@ -156,21 +165,20 @@ fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
     // Extract version from package.version (Inheritable<String>)
     let version = match &package.version {
         cargo_toml::Inheritable::Set(v) => v.clone(),
-        cargo_toml::Inheritable::Inherited { workspace: _ } => "0.0.0".to_string(),
+        cargo_toml::Inheritable::Inherited => "0.0.0".to_string(),
     };
 
     // Extract description from package.description (Option<Inheritable<String>>)
     let description = package.description.as_ref().and_then(|desc| match desc {
         cargo_toml::Inheritable::Set(v) => Some(v.clone()),
-        cargo_toml::Inheritable::Inherited { workspace: _ } => None,
+        cargo_toml::Inheritable::Inherited => None,
     });
 
     Ok(ProjectInfo {
-        path: path
-            .parent()
-            .unwrap_or(Path::new(""))
-            .to_string_lossy()
-            .to_string(),
+        path: match path.parent() {
+            Some(p) => p.to_string_lossy().to_string(),
+            None => ".".to_string(),
+        },
         name: package.name.clone(),
         version,
         description,
@@ -214,13 +222,22 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
         let updated_projects = Arc::clone(&updated_projects);
 
         let task = tokio::spawn(async move {
-            let _permit = semaphore.acquire().await.unwrap();
+            let _permit = match semaphore.acquire().await {
+                Ok(permit) => permit,
+                Err(e) => {
+                    eprintln!("Failed to acquire semaphore: {}", e);
+                    return;
+                }
+            };
             println!("Checking project: {}", project.name);
 
             let mut updated_project = project;
             updated_project.status = check_single_project_status(&updated_project.path).await;
 
-            updated_projects.lock().unwrap().push(updated_project);
+            match updated_projects.lock() {
+                Ok(mut proj) => proj.push(updated_project),
+                Err(e) => eprintln!("Failed to lock updated_projects mutex: {}", e),
+            }
         });
 
         tasks.push(task);
@@ -231,10 +248,13 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
     }
 
     println!("Project status check completed");
-    Ok(Arc::try_unwrap(updated_projects)
-        .unwrap()
-        .into_inner()
-        .unwrap())
+    match Arc::try_unwrap(updated_projects) {
+        Ok(mutex) => match mutex.into_inner() {
+            Ok(data) => Ok(data),
+            Err(e) => Err(anyhow!("Failed to extract data from mutex: {}", e)),
+        },
+        Err(_) => Err(anyhow!("Failed to unwrap Arc - still has multiple references")),
+    }
 }
 
 async fn check_single_project_status(project_path: &str) -> ProjectStatus {

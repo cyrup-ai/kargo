@@ -13,7 +13,7 @@ pub fn plugin(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #func
 
         #vis fn #wrapper() -> Box<dyn ::kargo_plugin_api::PluginCommand> {
-            #ident().build()
+            #ident().build_or_panic()
         }
 
         #[no_mangle]

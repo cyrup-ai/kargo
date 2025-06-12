@@ -65,7 +65,7 @@ impl TaskManager {
         
         // Store initial task status
         {
-            let mut tasks = self.tasks.lock().unwrap();
+            let mut tasks = self.tasks.lock().map_err(|e| anyhow::anyhow!("Failed to lock tasks mutex: {}", e))?;
             tasks.insert(task_id, TaskStatus::Running);
         }
         
@@ -77,13 +77,19 @@ impl TaskManager {
             let result = task.run();
             
             // Update task status based on result
-            let mut tasks = tasks.lock().unwrap();
-            match result {
-                Ok(data) => {
-                    tasks.insert(task_id, TaskStatus::Completed(data));
+            match tasks.lock() {
+                Ok(mut tasks) => {
+                    match result {
+                        Ok(data) => {
+                            tasks.insert(task_id, TaskStatus::Completed(data));
+                        },
+                        Err(err) => {
+                            tasks.insert(task_id, TaskStatus::Failed(err.to_string()));
+                        }
+                    }
                 },
-                Err(err) => {
-                    tasks.insert(task_id, TaskStatus::Failed(err.to_string()));
+                Err(e) => {
+                    eprintln!("Failed to lock tasks mutex for update: {}", e);
                 }
             }
         });
@@ -92,14 +98,14 @@ impl TaskManager {
     }
     
     /// Poll for the result of a task
-    pub fn poll_task(&self, task_id: u64) -> Option<HostFunctionResponse> {
-        let tasks = self.tasks.lock().unwrap();
+    pub fn poll_task(&self, task_id: u64) -> Result<Option<HostFunctionResponse>> {
+        let tasks = self.tasks.lock().map_err(|e| anyhow::anyhow!("Failed to lock tasks mutex: {}", e))?;
         
-        match tasks.get(&task_id) {
+        Ok(match tasks.get(&task_id) {
             Some(TaskStatus::Running) => Some(HostFunctionResponse::TaskPending),
             Some(TaskStatus::Completed(data)) => Some(HostFunctionResponse::Data(data.clone())),
             Some(TaskStatus::Failed(err)) => Some(HostFunctionResponse::Error(err.clone())),
             None => Some(HostFunctionResponse::Error(format!("Task not found: {}", task_id))),
-        }
+        })
     }
 }

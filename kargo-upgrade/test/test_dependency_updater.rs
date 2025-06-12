@@ -55,15 +55,15 @@ async fn test_dependency_up2date() -> Result<()> {
     assert_eq!(updates.len(), 3);
 
     // Check for specific updates
-    let anyhw_update = updates.iter().find(|u| u.name == "anyhow").unwrap();
+    let anyhw_update = updates.iter().find(|u| u.name == "anyhow").expect("Failed to find 'anyhow' update in results");
     assert_eq!(anyhw_update.from_version, "1.0.0");
     assert_eq!(anyhw_update.to_version, "2.0.0");
 
-    let tokio_update = updates.iter().find(|u| u.name == "tokio").unwrap();
+    let tokio_update = updates.iter().find(|u| u.name == "tokio").expect("Failed to find 'tokio' update in results");
     assert_eq!(tokio_update.from_version, "1.0.0");
     assert_eq!(tokio_update.to_version, "2.0.0");
 
-    let tempfile_update = updates.iter().find(|u| u.name == "tempfile").unwrap();
+    let tempfile_update = updates.iter().find(|u| u.name == "tempfile").expect("Failed to find 'tempfile' update in results");
     assert_eq!(tempfile_update.from_version, "3.0.0");
     assert_eq!(tempfile_update.to_version, "2.0.0");
 

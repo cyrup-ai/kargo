@@ -11,30 +11,34 @@ pub struct OutputProcessor {
 }
 
 impl OutputProcessor {
-    pub fn new() -> Self {
+    pub fn new() -> anyhow::Result<Self> {
         let mut patterns = HashMap::new();
         let mut transformations = HashMap::new();
 
         // Add regex patterns for identifying cargo output sections
         patterns.insert(
             "error".to_string(),
-            Regex::new(r"(?m)^error(\[E\d+\])?: .*$").unwrap(),
+            Regex::new(r"(?m)^error(\[E\d+\])?: .*$")
+                .map_err(|e| anyhow::anyhow!("Invalid error regex pattern: {}", e))?,
         );
 
         patterns.insert(
             "warning".to_string(),
-            Regex::new(r"(?m)^warning: .*$").unwrap(),
+            Regex::new(r"(?m)^warning: .*$")
+                .map_err(|e| anyhow::anyhow!("Invalid warning regex pattern: {}", e))?,
         );
 
         patterns.insert(
             "compiler_artifact".to_string(),
-            Regex::new(r"(?m)^\s*Compiling .*$").unwrap(),
+            Regex::new(r"(?m)^\s*Compiling .*$")
+                .map_err(|e| anyhow::anyhow!("Invalid compiler artifact regex pattern: {}", e))?,
         );
         
         // Add pattern for test results
         patterns.insert(
             "test_result".to_string(),
-            Regex::new(r"(?m)^\s*test .* ... (?:ok|FAILED)$").unwrap(),
+            Regex::new(r"(?m)^\s*test .* ... (?:ok|FAILED)$")
+                .map_err(|e| anyhow::anyhow!("Invalid test result regex pattern: {}", e))?,
         );
 
         // Configure transformations for specific output types
@@ -53,10 +57,10 @@ impl OutputProcessor {
             "TEST".to_string(),
         );
 
-        Self {
+        Ok(Self {
             patterns,
             transformations,
-        }
+        })
     }
     
     /// Add a new transformation

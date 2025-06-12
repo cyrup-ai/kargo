@@ -196,7 +196,10 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
     match &item.inner {
         // Check for re-exports first, regardless of whether they have a name
         ItemEnum::ExternCrate { name, rename } => {
-            let display_name = rename.as_ref().unwrap_or(name);
+            let display_name = match rename {
+                Some(r) => r,
+                None => name,
+            };
             output.push_str(&format!("{} Extern Crate `{}`\n\n", heading, display_name));
         }
         _ => {
@@ -1280,11 +1283,10 @@ fn process_struct_details(output: &mut String, struct_: &Struct, _item: &Item, d
                 if let Some(field_id) = field_opt {
                     if let Some(field_item) = data.index.get(field_id) {
                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                            let docs = field_item
-                                .docs
-                                .as_deref()
-                                .unwrap_or("")
-                                .replace('\n', "<br>");
+                            let docs = match field_item.docs.as_deref() {
+                                Some(d) => d.replace('\n', "<br>"),
+                                None => String::new(),
+                            };
                             output.push_str(&format!(
                                 "| {} | `{}` | {} |\n",
                                 i,
@@ -1312,11 +1314,10 @@ fn process_struct_details(output: &mut String, struct_: &Struct, _item: &Item, d
                 if let Some(field_item) = data.index.get(&field_id) {
                     if let Some(field_name) = &field_item.name {
                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                            let docs = field_item
-                                .docs
-                                .as_deref()
-                                .unwrap_or("")
-                                .replace('\n', "<br>");
+                            let docs = match field_item.docs.as_deref() {
+                                Some(d) => d.replace('\n', "<br>"),
+                                None => String::new(),
+                            };
                             output.push_str(&format!(
                                 "| `{}` | `{}` | {} |\n",
                                 field_name,
@@ -1480,11 +1481,10 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
                                 if let Some(field_id) = field_opt {
                                     if let Some(field_item) = data.index.get(field_id) {
                                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                                            let docs = field_item
-                                                .docs
-                                                .as_deref()
-                                                .unwrap_or("")
-                                                .replace('\n', "<br>");
+                                            let docs = match field_item.docs.as_deref() {
+                                                Some(d) => d.replace('\n', "<br>"),
+                                                None => String::new(),
+                                            };
                                             output.push_str(&format!(
                                                 "| {} | `{}` | {} |\n",
                                                 i,
@@ -1514,11 +1514,10 @@ fn process_enum_details(output: &mut String, enum_: &Enum, _item: &Item, data: &
                                 if let Some(field_item) = data.index.get(&field_id) {
                                     if let Some(field_name) = &field_item.name {
                                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                                            let docs = field_item
-                                                .docs
-                                                .as_deref()
-                                                .unwrap_or("")
-                                                .replace('\n', "<br>");
+                                            let docs = match field_item.docs.as_deref() {
+                                                Some(d) => d.replace('\n', "<br>"),
+                                                None => String::new(),
+                                            };
                                             output.push_str(&format!(
                                                 "| `{}` | `{}` | {} |\n",
                                                 field_name,
@@ -1663,11 +1662,10 @@ fn process_union_details(output: &mut String, union_: &Union, _item: &Item, data
         if let Some(field_item) = data.index.get(&field_id) {
             if let Some(field_name) = &field_item.name {
                 if let ItemEnum::StructField(field_type) = &field_item.inner {
-                    let docs = field_item
-                        .docs
-                        .as_deref()
-                        .unwrap_or("")
-                        .replace('\n', "<br>");
+                    let docs = match field_item.docs.as_deref() {
+                        Some(d) => d.replace('\n', "<br>"),
+                        None => String::new(),
+                    };
                     output.push_str(&format!(
                         "| `{}` | `{}` | {} |\n",
                         field_name,
@@ -1730,7 +1728,10 @@ fn process_union_details(output: &mut String, union_: &Union, _item: &Item, data
                                     if let Some(name) = &method_item.name {
                                         output.push_str(&format!("  - `{}`: ", name));
                                         if let Some(docs) = &method_item.docs {
-                                            let first_line = docs.lines().next().unwrap_or("");
+                                            let first_line = match docs.lines().next() {
+                                                Some(line) => line,
+                                                None => "",
+                                            };
                                             output.push_str(first_line);
                                         }
                                         output.push('\n');

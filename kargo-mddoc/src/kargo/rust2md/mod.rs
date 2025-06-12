@@ -46,8 +46,10 @@ impl DocGenerator {
         
         // 4. Write markdown to file in the knowledge base
         let output_path = self.get_output_path(&package_name)?;
-        fs::create_dir_all(output_path.parent().unwrap())
-            .context("Failed to create output directory")?;
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)
+                .context("Failed to create output directory")?;
+        }
         
         fs::write(&output_path, markdown)
             .context(format!("Failed to write markdown to {}", output_path.display()))?;

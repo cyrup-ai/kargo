@@ -5,6 +5,3 @@
 mod host_functions;
 pub mod manager;
 mod wasm_adapter;
-
-// Re-export key components
-pub use manager::PluginManager;

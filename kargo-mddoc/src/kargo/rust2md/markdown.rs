@@ -77,56 +77,72 @@ fn process_items(output: &mut String, item_ids: &[Id], data: &Crate, level: usiz
     if !grouped.modules.is_empty() {
         output.push_str(&format!("{} Modules\n\n", "#".repeat(heading_level)));
         for id in &grouped.modules {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.types.is_empty() {
         output.push_str(&format!("{} Types\n\n", "#".repeat(heading_level)));
         for id in &grouped.types {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.traits.is_empty() {
         output.push_str(&format!("{} Traits\n\n", "#".repeat(heading_level)));
         for id in &grouped.traits {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.functions.is_empty() {
         output.push_str(&format!("{} Functions\n\n", "#".repeat(heading_level)));
         for id in &grouped.functions {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.constants.is_empty() {
         output.push_str(&format!("{} Constants and Statics\n\n", "#".repeat(heading_level)));
         for id in &grouped.constants {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.macros.is_empty() {
         output.push_str(&format!("{} Macros\n\n", "#".repeat(heading_level)));
         for id in &grouped.macros {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.reexports.is_empty() {
         output.push_str(&format!("{} Re-exports\n\n", "#".repeat(heading_level)));
         for id in &grouped.reexports {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 
     if !grouped.other_items.is_empty() {
         output.push_str(&format!("{} Other Items\n\n", "#".repeat(heading_level)));
         for id in &grouped.other_items {
-            process_item(output, data.index.get(id).unwrap(), data, level + 1);
+            if let Some(item) = data.index.get(id) {
+                process_item(output, item, data, level + 1);
+            }
         }
     }
 }
@@ -185,7 +201,10 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
     // Handle re-exports specially first
     if let ItemEnum::Use(use_item) = &item.inner {
         // This is a re-export
-        let source_name = use_item.source.split("::").last().unwrap_or(&use_item.source);
+        let source_name = match use_item.source.split("::").last() {
+            Some(name) => name,
+            None => &use_item.source,
+        };
         if use_item.is_glob {
             output.push_str(&format!("{} Re-export `{}::*`\n\n", heading, use_item.source));
         } else if let Some(name) = &item.name {
@@ -544,7 +563,10 @@ fn process_struct_details(output: &mut String, struct_: &Struct, data: &Crate, l
                 if let Some(field_id) = field_opt {
                     if let Some(field_item) = data.index.get(field_id) {
                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                            let docs = field_item.docs.as_deref().unwrap_or("").replace('\n', "<br>");
+                            let docs = match field_item.docs.as_deref() {
+                                Some(d) => d.replace('\n', "<br>"),
+                                None => String::new(),
+                            };
                             output.push_str(&format!("| {} | `{}` | {} |\n", i, format_type(field_type, data), docs));
                         }
                     }
@@ -565,7 +587,10 @@ fn process_struct_details(output: &mut String, struct_: &Struct, data: &Crate, l
                 if let Some(field_item) = data.index.get(field_id) {
                     if let Some(field_name) = &field_item.name {
                         if let ItemEnum::StructField(field_type) = &field_item.inner {
-                            let docs = field_item.docs.as_deref().unwrap_or("").replace('\n', "<br>");
+                            let docs = match field_item.docs.as_deref() {
+                                Some(d) => d.replace('\n', "<br>"),
+                                None => String::new(),
+                            };
                             output.push_str(&format!(
                                 "| `{}` | `{}` | {} |\n",
                                 field_name,
@@ -631,7 +656,10 @@ fn process_union_details(output: &mut String, union_: &Union, data: &Crate, leve
         if let Some(field_item) = data.index.get(field_id) {
             if let Some(field_name) = &field_item.name {
                 if let ItemEnum::StructField(field_type) = &field_item.inner {
-                    let docs = field_item.docs.as_deref().unwrap_or("").replace('\n', "<br>");
+                    let docs = match field_item.docs.as_deref() {
+                        Some(d) => d.replace('\n', "<br>"),
+                        None => String::new(),
+                    };
                     output.push_str(&format!(
                         "| `{}` | `{}` | {} |\n",
                         field_name,

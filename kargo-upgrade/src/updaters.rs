@@ -1,175 +1,316 @@
-//! Module containing the update logic for different file types
-
-use crate::{
-    types::{CrateType, DependencyUpdate, UpdateOptions, UpdateResult},
-    models::{Dependency, DependencyLocation},
-    crates_io::get_latest_version,
-};
-use anyhow::Result;
+use anyhow::{Result, Context};
 use regex::Regex;
 use std::path::Path;
 use tokio::fs;
-use toml_edit::{DocumentMut, Item, Value as TomlValue};
+use once_cell::sync::Lazy;
 
-/// Update dependencies in a Cargo.toml file
-pub async fn update_cargo_toml(path: impl AsRef<Path>, options: &UpdateOptions) -> Result<UpdateResult> {
-    let path = path.as_ref().to_owned();
+use crate::crates_io::get_latest_version;
+use crate::models::{Dependency, DependencyLocation, DependencyUpdate, UpdateOptions};
 
-    // Read the Cargo.toml content
-    let content = fs::read_to_string(&path).await?;
-    let mut document = content.parse::<DocumentMut>()?;
+// Pre-compile regex patterns
+static CARGO_SECTION_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"```cargo\n([\s\S]*?)```").expect("Invalid cargo section regex")
+});
+static CARGO_DEPS_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"//\s*cargo-deps:\s*(.+)$").expect("Invalid cargo deps regex")
+});
 
-    // Track updates for reporting
-    let mut updates = Vec::new();
+/// Update dependencies in a cargo.toml file
+pub async fn update_cargo_toml(
+    path: &Path,
+    updates: Vec<DependencyUpdate>,
+    _options: &UpdateOptions,
+) -> Result<()> {
+    let content = fs::read_to_string(path).await?;
+    let mut document = content.parse::<toml_edit::DocumentMut>()?;
 
-    // Check if this is a workspace Cargo.toml
-    let is_workspace = document.get("workspace").is_some();
-    let crate_type = if is_workspace {
-        CrateType::Workspace
-    } else {
-        CrateType::Standard
-    };
-
-    // Update workspace dependencies if this is a workspace and the option is enabled
-    if is_workspace && options.update_workspace {
-        if let Some(workspace_deps) = document.get_mut("workspace.dependencies") {
-            if let Some(workspace_deps_table) = workspace_deps.as_table_mut() {
-                // Convert the iterator to a Vec first to make it Send
-                let deps: Vec<_> = workspace_deps_table.iter_mut()
-                    .map(|(key, value)| (key.to_string(), value))
-                    .collect();
-
-                for (name, value) in deps {
-                    if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDirect).await? {
-                        updates.push(update);
+    for update in updates {
+        // Update based on dependency location
+        match &update.dependency.location {
+            DependencyLocation::Dependencies => {
+                if let Some(deps) = document.get_mut("dependencies") {
+                    if let Some(dep) = deps.get_mut(&update.name) {
+                        update_dependency_version(dep, &update.to_version);
                     }
                 }
             }
-        }
-    }
-
-    // Update regular dependencies
-    if let Some(deps) = document.get_mut("dependencies") {
-        if let Some(deps_table) = deps.as_table_mut() {
-            // Convert the iterator to a Vec first to make it Send
-            let deps: Vec<_> = deps_table.iter_mut()
-                .map(|(key, value)| (key.to_string(), value))
-                .collect();
-
-            for (name, value) in deps {
-                // Skip workspace dependencies
-                if value.as_table().and_then(|t| t.get("workspace")).is_some() {
-                    continue;
+            DependencyLocation::DevDependencies => {
+                if let Some(deps) = document.get_mut("dev-dependencies") {
+                    if let Some(dep) = deps.get_mut(&update.name) {
+                        update_dependency_version(dep, &update.to_version);
+                    }
                 }
-
-                if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDirect).await? {
-                    updates.push(update);
+            }
+            DependencyLocation::BuildDependencies => {
+                if let Some(deps) = document.get_mut("build-dependencies") {
+                    if let Some(dep) = deps.get_mut(&update.name) {
+                        update_dependency_version(dep, &update.to_version);
+                    }
                 }
+            }
+            DependencyLocation::TargetDependencies { target } => {
+                if let Some(target_section) = document.get_mut("target") {
+                    if let Some(target_deps) = target_section.get_mut(target) {
+                        if let Some(deps) = target_deps.get_mut("dependencies") {
+                            if let Some(dep) = deps.get_mut(&update.name) {
+                                update_dependency_version(dep, &update.to_version);
+                            }
+                        }
+                    }
+                }
+            }
+            DependencyLocation::WorkspaceDependencies => {
+                if let Some(workspace) = document.get_mut("workspace") {
+                    if let Some(deps) = workspace.get_mut("dependencies") {
+                        if let Some(dep) = deps.get_mut(&update.name) {
+                            update_dependency_version(dep, &update.to_version);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Skip non-cargo.toml updates
+                continue;
             }
         }
     }
 
-    // Update dev-dependencies
-    if let Some(deps) = document.get_mut("dev-dependencies") {
-        if let Some(deps_table) = deps.as_table_mut() {
-            // Convert the iterator to a Vec first to make it Send
-            let deps: Vec<_> = deps_table.iter_mut()
-                .map(|(key, value)| (key.to_string(), value))
-                .collect();
-
-            for (name, value) in deps {
-                if let Some(update) = update_dependency(&name, value, DependencyLocation::CargoTomlDev).await? {
-                    updates.push(update);
-                }
-            }
-        }
-    }
-
-    // If we made any updates, write the changes back to disk
-    if !updates.is_empty() {
-        fs::write(&path, document.to_string()).await?;
-    }
-
-    Ok(UpdateResult {
-        path,
-        updates,
-        crate_type,
-        error: None,
-    })
+    // Write the updated content back
+    fs::write(path, document.to_string()).await?;
+    Ok(())
 }
 
-/// Update a single dependency to its latest version
-async fn update_dependency(name: &str, value: &mut Item, location: DependencyLocation) -> Result<Option<DependencyUpdate>> {
-    // Extract the current version
-    let current_version = match value {
-        // Simple string version like version = "1.0.0"
-        Item::Value(TomlValue::String(version)) => version.to_string(),
+/// Update a dependency version in a TOML value
+fn update_dependency_version(value: &mut toml_edit::Item, new_version: &str) {
+    match value {
+        toml_edit::Item::Value(val) => {
+            // Simple format: name = "version"
+            *val = toml_edit::Value::from(new_version);
+        }
+        toml_edit::Item::Table(table) => {
+            // Table format: name = { version = "version", ... }
+            if let Some(version_item) = table.get_mut("version") {
+                *version_item = toml_edit::Item::Value(toml_edit::Value::from(new_version));
+            }
+        }
+        toml_edit::Item::InlineTable(table) => {
+            // Inline table format: name = { version = "version", ... }
+            if let Some(version_val) = table.get_mut("version") {
+                *version_val = toml_edit::Value::from(new_version);
+            }
+        }
+        _ => {
+            // Unexpected format, skip
+        }
+    }
+}
 
-        // Table specification like version = { version = "1.0.0", features = ["..."]] }
-        Item::Table(table) => {
-            if let Some(version) = table.get("version") {
-                if let Some(ver_str) = version.as_str() {
-                    ver_str.to_string()
-                } else {
-                    return Ok(None); // Not a string version
+/// Update dependencies in Cargo manifest within a Rust file
+pub async fn update_cargo_manifest_in_rust(
+    path: &Path,
+    updates: Vec<DependencyUpdate>,
+    _options: &UpdateOptions,
+) -> Result<()> {
+    let content = fs::read_to_string(path).await?;
+    let mut updated_content = content.clone();
+
+    // Process updates by location type
+    for update in updates {
+        match &update.dependency.location {
+            DependencyLocation::RustFileManifest { .. } => {
+                // Handle Cargo manifest updates
+                if let Some(captures) = CARGO_SECTION_REGEX.captures(&content) {
+                    if let Some(cargo_section) = captures.get(1) {
+                        let original_cargo = cargo_section.as_str();
+                        let updated_cargo = update_cargo_section(original_cargo, &update)?;
+                        
+                        let full_section = captures.get(0)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get full cargo section"))?;
+                        let new_section = format!("```cargo\n{}```", updated_cargo);
+                        
+                        updated_content = updated_content.replace(full_section.as_str(), &new_section);
+                    }
                 }
+            }
+            _ => {
+                // Skip non-manifest updates
+                continue;
+            }
+        }
+    }
+
+    // Write the updated content back
+    fs::write(path, updated_content).await?;
+    Ok(())
+}
+
+fn update_cargo_section(cargo_content: &str, update: &DependencyUpdate) -> Result<String> {
+    let mut doc = cargo_content.parse::<toml_edit::DocumentMut>()
+        .context("Failed to parse cargo section as TOML")?;
+    
+    // Update in dependencies section
+    if let Some(deps) = doc.get_mut("dependencies") {
+        if let Some(dep) = deps.get_mut(&update.name) {
+            update_dependency_version(dep, &update.to_version);
+        }
+    }
+    
+    // Update in dev-dependencies section  
+    if let Some(deps) = doc.get_mut("dev-dependencies") {
+        if let Some(dep) = deps.get_mut(&update.name) {
+            update_dependency_version(dep, &update.to_version);
+        }
+    }
+    
+    Ok(doc.to_string())
+}
+
+/// Update dependencies in rust script files
+pub async fn update_rust_script(
+    path: &Path,
+    updates: Vec<DependencyUpdate>,
+    _options: &UpdateOptions,
+) -> Result<()> {
+    let content = fs::read_to_string(&path).await?;
+    let mut updated_content = content.clone();
+
+    // Process rust script format updates
+    for update in &updates {
+        match &update.dependency.location {
+            DependencyLocation::RustScriptCargo { section_range } => {
+                updated_content = update_rust_script_cargo_section(
+                    &updated_content, 
+                    section_range, 
+                    update
+                )?;
+            }
+            DependencyLocation::RustScriptCargoDeps { line_range } => {
+                updated_content = update_rust_script_cargo_deps_line(
+                    &updated_content,
+                    line_range,
+                    update
+                )?;
+            }
+            _ => continue,
+        }
+    }
+
+    // Write the updated content back
+    fs::write(path, updated_content).await?;
+    Ok(())
+}
+
+fn update_rust_script_cargo_section(
+    content: &str,
+    section_range: &(usize, usize),
+    update: &DependencyUpdate,
+) -> Result<String> {
+    // Extract the cargo section
+    let section = &content[section_range.0..section_range.1];
+    
+    // Update the dependency in the section
+    let updated_section = update_dependency_in_text(
+        section,
+        &update.name,
+        &update.from_version,
+        &update.to_version
+    )?;
+    
+    // Replace the section in the content
+    let mut result = content.to_string();
+    result.replace_range(section_range.0..section_range.1, &updated_section);
+    Ok(result)
+}
+
+fn update_rust_script_cargo_deps_line(
+    content: &str,
+    line_range: &(usize, usize),
+    update: &DependencyUpdate,
+) -> Result<String> {
+    // Extract the line
+    let line = &content[line_range.0..line_range.1];
+    
+    // Update the dependency in the line
+    let updated_line = update_dependency_in_deps_line(
+        line,
+        &update.name,
+        &update.from_version,
+        &update.to_version
+    )?;
+    
+    // Replace the line in the content
+    let mut result = content.to_string();
+    result.replace_range(line_range.0..line_range.1, &updated_line);
+    Ok(result)
+}
+
+fn update_dependency_in_text(
+    text: &str,
+    name: &str,
+    current_version: &str,
+    new_version: &str
+) -> Result<String> {
+    let mut result = text.to_string();
+    
+    // Try different patterns
+    let patterns = vec![
+        // Simple format: name = "version"
+        format!(r#"{}\s*=\s*["']{}["']"#, regex::escape(name), regex::escape(current_version)),
+        // Table format with version
+        format!(r#"version\s*=\s*["']{}["']"#, regex::escape(current_version)),
+    ];
+    
+    for pattern in patterns {
+        let regex = Regex::new(&pattern)?;
+        if regex.is_match(&result) {
+            let replacement = if pattern.contains("version\\s*=") {
+                format!("version = \"{}\"", new_version)
             } else {
-                return Ok(None); // No version key
-            }
-        },
-
-        // Other formats not supported
-        _ => return Ok(None),
-    };
-
-    // Get the latest version
-    if let Some(latest_version) = get_latest_version(name).await? {
-        // Skip if already at latest version
-        if current_version == latest_version {
-            return Ok(None);
+                format!("{} = \"{}\"", name, new_version)
+            };
+            result = regex.replace(&result, replacement.as_str()).to_string();
+            break;
         }
-
-        // Update the version in the toml
-        match value {
-            Item::Value(TomlValue::String(version)) => {
-                *version = toml_edit::Formatted::new(latest_version.clone());
-            },
-            Item::Table(table) => {
-                if let Some(version_item) = table.get_mut("version") {
-                    if let Some(version_str) = version_item.as_value_mut() {
-                        *version_str = TomlValue::String(toml_edit::Formatted::new(latest_version.clone()));
-                    }
-                }
-            },
-            _ => {}, // Shouldn't reach here
-        }
-
-        // Return the update information
-        Ok(Some(DependencyUpdate {
-            name: name.to_string(),
-            from_version: current_version.clone(),
-            to_version: latest_version,
-            dependency: Dependency {
-                name: name.to_string(),
-                version: current_version,
-                location,
-            },
-        }))
-    } else {
-        Ok(None)
     }
+    
+    Ok(result)
 }
 
-/// Update dependencies in a rust-script file
-pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions) -> Result<UpdateResult> {
-    let path = path.as_ref().to_owned();
+fn update_dependency_in_deps_line(
+    line: &str,
+    name: &str,
+    _current_version: &str,
+    new_version: &str
+) -> Result<String> {
+    // Handle various formats in cargo-deps line
+    let patterns = vec![
+        (format!(r#"{}=["']([^"']+)["']"#, regex::escape(name)), format!("{}=\"{}\"", name, new_version)),
+        (format!(r#"{}\s*=\s*["']([^"']+)["']"#, regex::escape(name)), format!("{} = \"{}\"", name, new_version)),
+    ];
+    
+    let mut result = line.to_string();
+    for (pattern, replacement) in patterns {
+        let regex = Regex::new(&pattern)?;
+        if regex.is_match(&result) {
+            result = regex.replace(&result, replacement.as_str()).to_string();
+            break;
+        }
+    }
+    
+    Ok(result)
+}
+
+/// Update dependencies in a markdown file
+pub async fn update_markdown(
+    path: &Path,
+    updates: Vec<DependencyUpdate>,
+    options: &UpdateOptions,
+) -> Result<()> {
     let content = fs::read_to_string(&path).await?;
-    let mut updates = Vec::new();
     let mut updated_content = content.clone();
 
     // 1. Handle embedded cargo manifest format: ```cargo ... ```
-    let cargo_section_regex = Regex::new(r"```cargo\n([\s\S]*?)```").unwrap();
-    if let Some(captures) = cargo_section_regex.captures(&content) {
+    if let Some(captures) = CARGO_SECTION_REGEX.captures(&content) {
         if let Some(cargo_section) = captures.get(1) {
             let cargo_content = cargo_section.as_str();
             let cargo_section_span = cargo_section.range();
@@ -180,56 +321,72 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
             // Helper function to update dependencies in a section
             async fn update_deps_in_section(section_name: &str, content: &str, _options: &UpdateOptions) -> Result<Vec<DependencyUpdate>> {
                 let mut section_updates = Vec::new();
-                let deps_section_regex = Regex::new(&format!(r"(?s)\[{}\](.*?)(?:\n\s*\[|\z)", section_name)).unwrap();
+                let deps_section_regex = Regex::new(&format!(r"(?s)\[{}\](.*?)(?:\n\s*\[|\z)", section_name))?;
 
                 if let Some(deps_section) = deps_section_regex.captures(content) {
-                    let deps_content = deps_section.get(1).unwrap().as_str();
+                    let deps_content = deps_section.get(1)
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get deps content"))?
+                        .as_str();
 
                     // First, handle simple format: name = "version"
-                    let simple_dep_regex = Regex::new(r#"(?m)^(\w+)\s*=\s*["']([^"']+)["']"#).unwrap();
+                    let simple_dep_regex = Regex::new(r#"(?m)^(\w+)\s*=\s*["']([^"']+)["']"#)?;
                     for cap in simple_dep_regex.captures_iter(deps_content) {
-                        let name = cap.get(1).unwrap().as_str();
-                        let version = cap.get(2).unwrap().as_str();
+                        let name = cap.get(1)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
+                            .as_str();
+                        let version = cap.get(2)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
+                            .as_str();
 
                         // Get the latest version
                         if let Ok(Some(latest)) = get_latest_version(name).await {
                             if version != latest {
+                                let dummy_dep = Dependency {
+                                    name: name.to_string(),
+                                    version: version.to_string(),
+                                    location: DependencyLocation::MarkdownCodeBlock {
+                                        start_line: 0,
+                                        end_line: 0,
+                                    },
+                                };
+
                                 section_updates.push(DependencyUpdate {
                                     name: name.to_string(),
                                     from_version: version.to_string(),
-                                    to_version: latest.clone(),
-                                    dependency: Dependency {
-                                        name: name.to_string(),
-                                        version: version.to_string(),
-                                        location: DependencyLocation::RustScriptCargo {
-                                            section_range: (0, 0), // Will be updated later
-                                        },
-                                    },
+                                    to_version: latest,
+                                    dependency: dummy_dep,
                                 });
                             }
                         }
                     }
 
                     // Second, handle table format: name = { version = "version", ... }
-                    let table_dep_regex = Regex::new(r#"(?sm)^(\w+)\s*=\s*\{(.*?)version\s*=\s*["']([^"']+)["']"#).unwrap();
+                    let table_dep_regex = Regex::new(r#"(?ms)^(\w+)\s*=\s*\{(.*?)version\s*=\s*["']([^"']+)["']"#)?;
                     for cap in table_dep_regex.captures_iter(deps_content) {
-                        let name = cap.get(1).unwrap().as_str();
-                        let version = cap.get(3).unwrap().as_str();
+                        let name = cap.get(1)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
+                            .as_str();
+                        let version = cap.get(3)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
+                            .as_str();
 
                         // Get the latest version
                         if let Ok(Some(latest)) = get_latest_version(name).await {
                             if version != latest {
+                                let dummy_dep = Dependency {
+                                    name: name.to_string(),
+                                    version: version.to_string(),
+                                    location: DependencyLocation::MarkdownCodeBlock {
+                                        start_line: 0,
+                                        end_line: 0,
+                                    },
+                                };
+
                                 section_updates.push(DependencyUpdate {
                                     name: name.to_string(),
                                     from_version: version.to_string(),
-                                    to_version: latest.clone(),
-                                    dependency: Dependency {
-                                        name: name.to_string(),
-                                        version: version.to_string(),
-                                        location: DependencyLocation::RustScriptCargo {
-                                            section_range: (0, 0), // Will be updated later
-                                        },
-                                    },
+                                    to_version: latest,
+                                    dependency: dummy_dep,
                                 });
                             }
                         }
@@ -239,174 +396,165 @@ pub async fn update_rust_script(path: impl AsRef<Path>, options: &UpdateOptions)
                 Ok(section_updates)
             }
 
-            // Update dependencies section
-            let mut all_updates = update_deps_in_section("dependencies", &cargo_content, options).await?;
+            // Look for and update dependencies in different sections
+            let mut all_updates = Vec::new();
 
-            // Update dev-dependencies section
-            let dev_updates = update_deps_in_section("dev-dependencies", &cargo_content, options).await?;
-            all_updates.extend(dev_updates);
+            // Check dependencies section
+            if let Ok(deps_updates) = update_deps_in_section("dependencies", cargo_content, options).await {
+                all_updates.extend(deps_updates);
+            }
 
-            // Apply all the updates to the content
-            for update in &all_updates {
-                // Update simple version format
-                let simple_regex = Regex::new(&format!(r#"({}\s*=\s*)["']{}["']"#,
-                                                    regex::escape(&update.name),
-                                                    regex::escape(&update.from_version))).unwrap();
+            // Check dev-dependencies section  
+            if let Ok(dev_deps_updates) = update_deps_in_section("dev-dependencies", cargo_content, options).await {
+                all_updates.extend(dev_deps_updates);
+            }
+
+            // Check build-dependencies section
+            if let Ok(build_deps_updates) = update_deps_in_section("build-dependencies", cargo_content, options).await {
+                all_updates.extend(build_deps_updates);
+            }
+
+            // Apply all updates to the cargo content
+            for update in all_updates {
+                // Update simple format
+                let simple_regex = Regex::new(&format!(
+                    r#"({}\s*=\s*["']){}(["'])"#,
+                    regex::escape(&update.name),
+                    regex::escape(&update.from_version)
+                ))?;
                 updated_cargo_content = simple_regex.replace_all(&updated_cargo_content,
-                    &format!("${{1}}\"{}\"", update.to_version)).to_string();
+                    format!("${{1}}{}${{2}}", update.to_version).as_str()).to_string();
 
                 // Update table format
-                let table_regex = Regex::new(&format!(r#"(?s)({}\s*=\s*\{{.*?version\s*=\s*)["']{}["']"#,
-                                                   regex::escape(&update.name),
-                                                   regex::escape(&update.from_version))).unwrap();
+                let table_regex = Regex::new(&format!(
+                    r#"(version\s*=\s*["']){}(["'])"#,
+                    regex::escape(&update.from_version)
+                ))?;
                 updated_cargo_content = table_regex.replace_all(&updated_cargo_content,
-                    &format!("${{1}}\"{}\"", update.to_version)).to_string();
+                    format!("${{1}}{}${{2}}", update.to_version).as_str()).to_string();
             }
 
-            updates.extend(all_updates);
-
-            // If we made updates to the cargo section, update the content
-            if !updates.is_empty() {
-                updated_content.replace_range(cargo_section_span.start..cargo_section_span.end, &updated_cargo_content);
-            }
+            // Replace the cargo section in the content
+            let original_section = &content[cargo_section_span];
+            updated_content.replace_range(cargo_section_span, &updated_cargo_content);
         }
     }
 
     // 2. Handle single-line cargo-deps format
-    let cargo_deps_regex = Regex::new(r"//\s*cargo-deps:\s*(.+)$").unwrap();
-    if let Some(captures) = cargo_deps_regex.captures(&content) {
+    if let Some(captures) = CARGO_DEPS_REGEX.captures(&content) {
         if let Some(deps_match) = captures.get(1) {
             let deps_str = deps_match.as_str();
-            let _deps_span = deps_match.range();
+            let deps_range = deps_match.range();
 
-            // Parse the dependencies string
+            // Parse dependencies from the line
             let mut updated_deps = deps_str.to_string();
 
             // First, handle dependencies with versions
-            let dep_regex = Regex::new(r#"(\w+)\s*=\s*["']([^"']+)["']"#).unwrap();
+            let dep_regex = Regex::new(r#"(\w+)\s*=\s*["']([^"']+)["']"#)?;
             for cap in dep_regex.captures_iter(deps_str) {
-                let name = cap.get(1).unwrap().as_str();
-                let version = cap.get(2).unwrap().as_str();
+                let name = cap.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
+                    .as_str();
+                let version = cap.get(2)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
+                    .as_str();
 
                 // Get the latest version
                 if let Ok(Some(latest)) = get_latest_version(name).await {
                     if version != latest {
-                        let update = DependencyUpdate {
-                            name: name.to_string(),
-                            from_version: version.to_string(),
-                            to_version: latest.clone(),
-                            dependency: Dependency {
-                                name: name.to_string(),
-                                version: version.to_string(),
-                                location: DependencyLocation::RustScriptDeps {
-                                    line_range: (0, 0), // Will be calculated
-                                },
-                            },
-                        };
-
-                        // Handle different spacing patterns in the replacement
-                        let patterns = [
-                            format!("{}=\"{}\"", name, version),
-                            format!("{} = \"{}\"", name, version),
-                            format!("{}= \"{}\"", name, version),
-                            format!("{}=\"{}\"", name, version),
-                        ];
-
-                        let new_spec = format!("{}=\"{}\"", name, latest);
-
-                        // Try each pattern for replacement
-                        let mut replaced = false;
-                        for pattern in patterns.iter() {
-                            if updated_deps.contains(pattern) {
-                                updated_deps = updated_deps.replace(pattern, &new_spec);
-                                replaced = true;
-                                break;
-                            }
-                        }
-
-                        // If none of our patterns matched exactly, use regex for replacement
-                        if !replaced {
-                            let replace_regex = Regex::new(&format!(r#"({}\s*=\s*)["']{}["']"#,
-                                                                  regex::escape(name),
-                                                                  regex::escape(version))).unwrap();
-                            updated_deps = replace_regex.replace(&updated_deps,
-                                                              &format!("${{1}}\"{}\"", latest)).to_string();
-                        }
-
-                        updates.push(update);
+                        // Update in the deps string
+                        let replace_regex = Regex::new(&format!(
+                            r#"({}\s*=\s*["']){}(["'])"#,
+                            regex::escape(name),
+                            regex::escape(version)
+                        ))?;
+                        updated_deps = replace_regex.replace(&updated_deps,
+                            format!("${{1}}{}${{2}}", latest).as_str()).to_string();
                     }
                 }
             }
 
-            // Then handle bare dependencies (no version specified)
-            // Format: cargo-deps: dep1, dep2, dep3
-            let bare_deps_regex = Regex::new(r"(?:^|,)\s*(\w+)(?:\s*,|$)").unwrap();
-            for cap in bare_deps_regex.captures_iter(deps_str) {
-                let name = cap.get(1).unwrap().as_str();
+            // Also handle format without quotes: name=version
+            let bare_regex = Regex::new(r#"(\w+)=([^\s,]+)"#)?;
+            for cap in bare_regex.captures_iter(deps_str) {
+                let name = cap.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
+                    .as_str();
+                
+                // Skip if this was already handled with quotes
+                if dep_regex.is_match(&format!("{} = ", name)) {
+                    continue;
+                }
 
-                // Skip if this dependency already has a version
+                let version = cap.get(2)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
+                    .as_str();
+
+                // Get the latest version
+                if let Ok(Some(latest)) = get_latest_version(name).await {
+                    if version != latest {
+                        // Update in the deps string
+                        let replace_regex = Regex::new(&format!(
+                            r#"{}={}"#,
+                            regex::escape(name),
+                            regex::escape(version)
+                        ))?;
+                        updated_deps = replace_regex.replace(&updated_deps,
+                            format!("{}={}", name, latest).as_str()).to_string();
+                    }
+                }
+            }
+
+            // Handle bare dependency names (no version specified)
+            // Format: cargo-deps: dep1, dep2, dep3
+            let bare_deps_regex = Regex::new(r"(?:^|,)\s*(\w+)(?:\s*,|$)")?;
+            for cap in bare_deps_regex.captures_iter(deps_str) {
+                let name = cap.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
+                    .as_str();
+
+                // Skip if this dependency already has a version specified
                 if dep_regex.captures_iter(deps_str)
-                    .any(|cap| cap.get(1).unwrap().as_str() == name) {
+                    .any(|c| c.get(1).map(|m| m.as_str()) == Some(name)) {
                     continue;
                 }
 
                 // Get the latest version
                 if let Ok(Some(latest)) = get_latest_version(name).await {
-                    let update = DependencyUpdate {
-                        name: name.to_string(),
-                        from_version: "none".to_string(),
-                        to_version: latest.clone(),
-                        dependency: Dependency {
-                            name: name.to_string(),
-                            version: "none".to_string(),
-                            location: DependencyLocation::RustScriptDeps {
-                                line_range: (0, 0), // Will be calculated
-                            },
-                        },
-                    };
-
-                    // Replace the bare dependency with a versioned one
+                    // Replace bare dependency with versioned one
                     let bare_dep_pattern = format!(r"(?:^|,)\s*{}(?:\s*,|$)", regex::escape(name));
-                    let bare_dep_regex = Regex::new(&bare_dep_pattern).unwrap();
+                    let bare_dep_regex = Regex::new(&bare_dep_pattern)?;
 
-                    // Keep the comma if it exists
-                    let replacement = if deps_str.contains(&format!("{},", name)) {
-                        format!("{}=\"{}\",", name, latest)
-                    } else if deps_str.contains(&format!("{} ,", name)) {
-                        format!("{}=\"{}\" ,", name, latest)
-                    } else if deps_str.contains(&format!(", {}", name)) {
-                        format!(", {}=\"{}\"", name, latest)
+                    // Determine the replacement based on context
+                    if deps_str.contains('=') {
+                        // Other deps have versions, match that format
+                        updated_deps = bare_dep_regex.replace(&updated_deps,
+                            format!(r#", {} = "{}", "#, name, latest).as_str()).to_string();
                     } else {
-                        format!("{}=\"{}\"", name, latest)
-                    };
-
-                    updated_deps = bare_dep_regex.replace(&updated_deps, replacement.as_str()).to_string();
-                    updates.push(update);
+                        // This might be the only dep or all are bare
+                        updated_deps = bare_dep_regex.replace(&updated_deps,
+                            format!(r#"{}="{}""#, name, latest).as_str()).to_string();
+                    }
                 }
             }
 
-            // If we made updates to the deps, update the content
-            if !updates.is_empty() {
-                // Find the full line containing cargo-deps
-                let line_regex = Regex::new(&format!(r"//\s*cargo-deps:\s*{}", regex::escape(deps_str))).unwrap();
-                if let Some(line_match) = line_regex.find(&content) {
-                    let line_span = line_match.range();
-                    let new_line = format!("// cargo-deps: {}", updated_deps);
-                    updated_content.replace_range(line_span.start..line_span.end, &new_line);
-                }
+            // Replace the deps string in the content
+            // We need to replace within the full match to preserve the comment prefix
+            let full_match = captures.get(0)
+                .ok_or_else(|| anyhow::anyhow!("Failed to get full match"))?;
+            let full_str = full_match.as_str();
+            
+            // Find the full line containing cargo-deps
+            let line_regex = Regex::new(r"(?m)^.*cargo-deps:.*$")?;
+            if let Some(line_match) = line_regex.find(&content) {
+                let line_str = line_match.as_str();
+                let updated_line = line_str.replace(deps_str, &updated_deps);
+                updated_content = updated_content.replace(line_str, &updated_line);
             }
         }
     }
 
-    // Write updates back to the file if needed
-    if !updates.is_empty() {
-        fs::write(&path, &updated_content).await?;
-    }
-
-    Ok(UpdateResult {
-        path,
-        updates,
-        crate_type: CrateType::RustScript,
-        error: None,
-    })
+    // Write the updated content back
+    fs::write(path, updated_content).await?;
+    Ok(())
 }

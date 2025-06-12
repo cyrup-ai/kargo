@@ -50,7 +50,7 @@ tempfile = "3.0.0"
     
     assert!(deps_names.contains(&"anyhow".to_string()));
     
-    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").unwrap();
+    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").expect("Failed to find 'anyhow' dependency in parsed results");
     assert_eq!(anyhow_dep.version, "1.0.0");
     assert!(matches!(
         anyhow_dep.location,
@@ -97,14 +97,14 @@ fn main() {
     assert_eq!(dependencies.len(), 2);
 
     // Check for specific dependencies
-    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").unwrap();
+    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").expect("Failed to find 'anyhow' dependency in rust-script parsed results");
     assert_eq!(anyhow_dep.version, "1.0.0");
     assert!(matches!(
         anyhow_dep.location,
         DependencyLocation::RustScriptCargo { .. }
     ));
 
-    let tokio_dep = dependencies.iter().find(|d| d.name == "tokio").unwrap();
+    let tokio_dep = dependencies.iter().find(|d| d.name == "tokio").expect("Failed to find 'tokio' dependency in rust-script parsed results");
     assert_eq!(tokio_dep.version, "1.0.0");
     assert!(matches!(
         tokio_dep.location,

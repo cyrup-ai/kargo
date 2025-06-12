@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, Context};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ pub struct RustScript {
     /// Extracted dependencies
     pub dependencies: HashMap<String, String>,
     /// Original file content
-    content: String,
+    _content: String,
 }
 
 impl RustScript {
@@ -35,7 +35,7 @@ impl RustScript {
             path,
             sections,
             dependencies,
-            content,
+            _content: content,
         })
     }
 
@@ -83,7 +83,7 @@ impl RustScript {
                         Self::extract_dependencies_from_document(&doc, &mut dependencies);
                     } else {
                         // Fallback to regex for simpler formats if TOML parsing fails
-                        Self::extract_dependencies_with_regex(&cleaned_content, &mut dependencies);
+                        Self::extract_dependencies_with_regex(&cleaned_content, &mut dependencies)?;
                     }
                 }
             }
@@ -123,17 +123,25 @@ impl RustScript {
     }
 
     /// Extract dependencies using regex for simple formats
-    fn extract_dependencies_with_regex(content: &str, dependencies: &mut HashMap<String, String>) {
+    fn extract_dependencies_with_regex(content: &str, dependencies: &mut HashMap<String, String>) -> Result<()> {
         // Pattern for simple dependency declarations
-        let regex = Regex::new(r#"(\w+)\s*=\s*["']([^"']+)["']"#).unwrap();
+        let regex = Regex::new(r#"(\w+)\s*=\s*["']([^"']+)["']"#)
+            .context("Failed to compile dependency regex")?;
 
         for captures in regex.captures_iter(content) {
             if captures.len() >= 3 {
-                let name = captures.get(1).unwrap().as_str().to_string();
-                let version = captures.get(2).unwrap().as_str().to_string();
+                let name = captures.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("Missing capture group 1"))?
+                    .as_str()
+                    .to_string();
+                let version = captures.get(2)
+                    .ok_or_else(|| anyhow::anyhow!("Missing capture group 2"))?
+                    .as_str()
+                    .to_string();
                 dependencies.insert(name, version);
             }
         }
+        Ok(())
     }
 
     /* TODO: Uncomment when kargo-upgrade is integrated
@@ -191,13 +199,13 @@ impl RustScript {
                 // Replace in the file content, handling comment-based sections
                 if original_section.contains("//!") {
                     // Doc comment format
-                    let doc_regex = Regex::new(r"^").unwrap();
+                    let doc_regex = Regex::new(r"^")?;
                     let updated_section =
                         doc_regex.replace_all(&section_content, "//! ").to_string();
                     updated_content.replace_range(section.start..section.end, &updated_section);
                 } else if original_section.contains("//") {
                     // Line comment format
-                    let line_regex = Regex::new(r"^").unwrap();
+                    let line_regex = Regex::new(r"^")?;
                     let updated_section =
                         line_regex.replace_all(&section_content, "// ").to_string();
                     updated_content.replace_range(section.start..section.end, &updated_section);
@@ -244,42 +252,5 @@ fn extract_version(value: &toml_edit::Item) -> Option<String> {
             }
         }
         _ => None,
-    }
-}
-
-/// Update a dependency in content text
-fn update_dependency_in_content(name: &str, current: &str, latest: &str, content: &mut String) {
-    // Try different patterns to find and update the dependency
-    let patterns = [
-        // Simple format: name = "version"
-        format!(
-            r#"{}\s*=\s*["']{}["']"#,
-            regex::escape(name),
-            regex::escape(current)
-        ),
-        // Table format: name = { version = "version" }
-        format!(
-            r#"{}\s*=\s*\{{\s*version\s*=\s*["']{}["']"#,
-            regex::escape(name),
-            regex::escape(current)
-        ),
-        // Table format with features: name = { version = "version", features = [...] }
-        format!(r#"version\s*=\s*["']{}["']"#, regex::escape(current)),
-    ];
-
-    for pattern in patterns {
-        let regex = Regex::new(&pattern).unwrap();
-        let replacement = if pattern.contains("version\\s*=") {
-            // Replace just the version part
-            format!("version = \"{}\"", latest)
-        } else if pattern.contains("\\{\\{") {
-            // Table format
-            format!("{} = {{ version = \"{}\"", name, latest)
-        } else {
-            // Simple format
-            format!("{} = \"{}\"", name, latest)
-        };
-
-        *content = regex.replace(content, replacement.as_str()).to_string();
     }
 }

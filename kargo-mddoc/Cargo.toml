@@ -39,6 +39,7 @@ tokio = { version = "1.45", features = ["fs", "rt", "macros"] }
 
 # TOML editing
 toml_edit = "0.22"
+lazy_static = "1.5.0"
 
 [lib]
 name = "kargo_mddoc"

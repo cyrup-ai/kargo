@@ -220,13 +220,13 @@ impl ProjectAnalyzer {
             .get("lib")
             .and_then(|lib| lib.get("proc-macro"))
             .and_then(|proc_macro| proc_macro.as_bool())
-            .unwrap_or(false);
+            == Some(true);
 
         let name = document
             .get("package")
             .and_then(|package| package.get("name"))
             .and_then(|name| name.as_str())
-            .unwrap_or("unknown")
+            .ok_or_else(|| anyhow::anyhow!("Missing package name in Cargo.toml"))?
             .to_string();
 
         let has_build_script = path
@@ -249,22 +249,22 @@ impl ProjectAnalyzer {
                 ProjectType::Hybrid(HybridConfig {
                     name: name.clone(),
                     path: path.to_path_buf(),
-                    bin_path: Some(path.parent().unwrap().join("src/main.rs")),
-                    lib_path: Some(path.parent().unwrap().join("src/lib.rs")),
+                    bin_path: path.parent().map(|p| p.join("src/main.rs")),
+                    lib_path: path.parent().map(|p| p.join("src/lib.rs")),
                     has_build_script,
                 })
             } else if is_binary {
                 ProjectType::Binary(BinaryConfig {
                     name: name.clone(),
                     path: path.to_path_buf(),
-                    bin_path: Some(path.parent().unwrap().join("src/main.rs")),
+                    bin_path: path.parent().map(|p| p.join("src/main.rs")),
                     has_build_script,
                 })
             } else if is_library {
                 ProjectType::Library(LibraryConfig {
                     name: name.clone(),
                     path: path.to_path_buf(),
-                    lib_path: Some(path.parent().unwrap().join("src/lib.rs")),
+                    lib_path: path.parent().map(|p| p.join("src/lib.rs")),
                     has_build_script,
                 })
             } else {
@@ -292,22 +292,22 @@ impl ProjectAnalyzer {
             Ok(ProjectType::Hybrid(HybridConfig {
                 name,
                 path: path.to_path_buf(),
-                bin_path: Some(path.parent().unwrap().join("src/main.rs")),
-                lib_path: Some(path.parent().unwrap().join("src/lib.rs")),
+                bin_path: path.parent().map(|p| p.join("src/main.rs")),
+                lib_path: path.parent().map(|p| p.join("src/lib.rs")),
                 has_build_script,
             }))
         } else if is_binary {
             Ok(ProjectType::Binary(BinaryConfig {
                 name,
                 path: path.to_path_buf(),
-                bin_path: Some(path.parent().unwrap().join("src/main.rs")),
+                bin_path: path.parent().map(|p| p.join("src/main.rs")),
                 has_build_script,
             }))
         } else if is_library {
             Ok(ProjectType::Library(LibraryConfig {
                 name,
                 path: path.to_path_buf(),
-                lib_path: Some(path.parent().unwrap().join("src/lib.rs")),
+                lib_path: path.parent().map(|p| p.join("src/lib.rs")),
                 has_build_script,
             }))
         } else {
@@ -317,63 +317,72 @@ impl ProjectAnalyzer {
 
     /// Analyze a workspace Cargo.toml
     async fn analyze_workspace(&self, path: &Path, document: DocumentMut) -> Result<ProjectType> {
-        let workspace = document.get("workspace").unwrap();
+        let workspace = document.get("workspace")
+            .ok_or_else(|| anyhow::anyhow!("No [workspace] section found in Cargo.toml"))?;
 
         // Extract workspace members
-        let members = workspace
+        let parent_dir = path.parent()
+            .ok_or_else(|| anyhow::anyhow!("Cargo.toml has no parent directory"))?;
+            
+        let members = match workspace
             .get("members")
             .and_then(|members| members.as_array())
-            .map(|members| {
+        {
+            Some(members) => {
                 members
                     .iter()
                     .filter_map(|m| m.as_str())
                     .map(|m| {
-                        let member_path = if m.starts_with("/") {
+                        if m.starts_with("/") {
                             PathBuf::from(m)
                         } else {
-                            path.parent().unwrap().join(m)
-                        };
-                        member_path
+                            parent_dir.join(m)
+                        }
                     })
                     .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            }
+            None => Vec::new(),
+        };
 
-        let default_members = workspace
+        let default_members = match workspace
             .get("default-members")
             .and_then(|members| members.as_array())
-            .map(|members| {
+        {
+            Some(members) => Some(
                 members
                     .iter()
                     .filter_map(|m| m.as_str())
                     .map(|m| {
-                        let member_path = if m.starts_with("/") {
+                        if m.starts_with("/") {
                             PathBuf::from(m)
                         } else {
-                            path.parent().unwrap().join(m)
-                        };
-                        member_path
+                            parent_dir.join(m)
+                        }
                     })
                     .collect::<Vec<_>>()
-            });
+            ),
+            None => None,
+        };
 
-        let exclude = workspace
+        let exclude = match workspace
             .get("exclude")
             .and_then(|members| members.as_array())
-            .map(|members| {
+        {
+            Some(members) => Some(
                 members
                     .iter()
                     .filter_map(|m| m.as_str())
                     .map(|m| {
-                        let member_path = if m.starts_with("/") {
+                        if m.starts_with("/") {
                             PathBuf::from(m)
                         } else {
-                            path.parent().unwrap().join(m)
-                        };
-                        member_path
+                            parent_dir.join(m)
+                        }
                     })
                     .collect::<Vec<_>>()
-            });
+            ),
+            None => None,
+        };
 
         // Check for package section to determine if it's a virtual workspace
         let is_virtual = document.get("package").is_none();
@@ -491,7 +500,7 @@ impl ProjectAnalyzer {
                 if table
                     .get("workspace")
                     .and_then(|w| w.as_bool())
-                    .unwrap_or(false)
+                    == Some(true)
                 {
                     inherited_fields.insert(key.to_string(), true);
                 }

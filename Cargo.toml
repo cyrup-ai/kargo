@@ -9,8 +9,7 @@ members = [
     "kargo-mddoc",
     "kargo-upgrade",
     "kargo-walk",
-    "kargo-workspace"
-]
+    "kargo-workspace"]
 
 [workspace.package]
 version = "0.1.0"

@@ -20,7 +20,7 @@ async fn test_doc_generator() -> Result<()> {
 
     // Create temporary knowledge base directory
     let kb_dir = TempDir::new()?;
-    env::set_var("KNOWLEDGE_BASE_ROOT_DIR", kb_dir.path().to_str().unwrap());
+    env::set_var("KNOWLEDGE_BASE_ROOT_DIR", kb_dir.path().to_str().expect("Failed to convert temp directory path to string"));
 
     // Create a Cargo.toml file for a simple project
     let src_dir = root_path.join("src");
@@ -103,7 +103,7 @@ async fn test_doc_generation_with_update() -> Result<()> {
 
     // Create temporary knowledge base directory
     let kb_dir = TempDir::new()?;
-    env::set_var("KNOWLEDGE_BASE_ROOT_DIR", kb_dir.path().to_str().unwrap());
+    env::set_var("KNOWLEDGE_BASE_ROOT_DIR", kb_dir.path().to_str().expect("Failed to convert temp directory path to string"));
 
     // Create a Cargo.toml file
     let src_dir = root_path.join("src");

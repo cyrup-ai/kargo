@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use kargo_plugin_api::{ExecutionContext, PluginCommand, BoxFuture};
 use clap::{Command, Arg};
 use crate::{Config, DocGenerator};
@@ -89,8 +90,13 @@ impl PluginCommand for MddocPlugin {
             }
 
             // Build configuration from arguments
-            let package_spec = matches.get_one::<String>("package").unwrap().clone();
-            let output_dir = PathBuf::from(matches.get_one::<String>("output").unwrap());
+            let package_spec = matches.get_one::<String>("package")
+                .ok_or_else(|| anyhow!("Package argument is required"))?
+                .clone();
+            let output_dir = PathBuf::from(
+                matches.get_one::<String>("output")
+                    .ok_or_else(|| anyhow!("Output directory argument is required"))?
+            );
             let temp_dir = matches.get_one::<String>("temp-dir").map(PathBuf::from);
             let keep_temp = matches.get_flag("keep-temp");
             let skip_component_check = matches.get_flag("skip-component-check");

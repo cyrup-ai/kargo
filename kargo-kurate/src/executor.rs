@@ -11,10 +11,10 @@ pub struct KargoExecutor {
 }
 
 impl KargoExecutor {
-    pub fn new() -> Self {
-        Self {
-            processor: OutputProcessor::new(),
-        }
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            processor: OutputProcessor::new()?,
+        })
     }
 
     /// Run a cargo command synchronously 

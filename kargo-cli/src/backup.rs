@@ -26,7 +26,8 @@ impl BackupManager {
     }
 
     pub fn backup_file(&mut self, path: &Path) -> Result<()> {
-        let rel_path = path.file_name().unwrap();
+        let rel_path = path.file_name()
+            .ok_or_else(|| anyhow::anyhow!("Path has no file name: {}", path.display()))?;
         let backup_path = self.backup_dir.path().join(rel_path);
 
         fs::copy(path, &backup_path)?;

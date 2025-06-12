@@ -6,6 +6,9 @@ use std::sync::Arc;
 use gag::BufferRedirect;
 use regex::{Regex, RegexSet};
 
+mod error;
+pub use error::{BuilderError, Result};
+
 type Handler = Arc<dyn Fn(ExecutionContext) -> BoxFuture + Send + Sync>;
 type OutputHandler = Arc<dyn Fn(&regex::Match<'_>, &ExecutionContext) -> BoxFuture + Send + Sync>;
 
@@ -59,7 +62,7 @@ impl PluginBuilder {
         self
     }
 
-    pub fn build(self) -> Box<dyn PluginCommand> {
+    pub fn build(self) -> Result<Box<dyn PluginCommand>> {
         let Self {
             name,
             about,
@@ -67,7 +70,7 @@ impl PluginBuilder {
             run,
             patterns,
         } = self;
-        let run = run.expect("PluginBuilder::on_execute not called");
+        let run = run.ok_or(BuilderError::MissingHandler)?;
 
         struct Impl {
             clap: Command,
@@ -114,12 +117,13 @@ impl PluginBuilder {
         let (pat_strings, cbs): (Vec<_>, Vec<_>) = patterns.into_iter().unzip();
         let regs: Vec<Regex> = pat_strings
             .iter()
-            .map(|p| Regex::new(p).expect("invalid regex"))
-            .collect();
+            .map(|p| Regex::new(p).map_err(|_| BuilderError::InvalidRegex(p.clone())))
+            .collect::<Result<Vec<_>>>()?;
         let set = if pat_strings.is_empty() {
             RegexSet::empty()
         } else {
-            RegexSet::new(&pat_strings).expect("regex set build failed")
+            RegexSet::new(&pat_strings)
+                .map_err(|e| BuilderError::RegexSetFailed(e.to_string()))?
         };
 
         let mut cmd = Command::new(name);
@@ -130,12 +134,20 @@ impl PluginBuilder {
             cmd = cmd.arg(arg);
         }
 
-        Box::new(Impl {
+        Ok(Box::new(Impl {
             clap: cmd,
             run,
             set,
             regs,
             cbs,
+        }))
+    }
+
+    /// Build the plugin command, panicking on error.
+    /// This is for backward compatibility with the macro.
+    pub fn build_or_panic(self) -> Box<dyn PluginCommand> {
+        self.build().unwrap_or_else(|e| {
+            panic!("Failed to build plugin: {}", e)
         })
     }
 }
