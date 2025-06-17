@@ -1,0 +1,16 @@
+[package]
+name = "kargo-{{plugin_name}}"
+version = "0.1.0"
+edition = "2021"
+authors = ["{{author_name}} <{{author_email}}>"]
+description = "{{plugin_description}}"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kargo-plugin-api = "0.1"
+kargo-plugin-native = "0.1"
+clap = "4"
+anyhow = "1"
+log = "0.4"

@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+Cargo.lock
+/rust_docs
+/rust_docs_json
+.DS_Store

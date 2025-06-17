@@ -1,0 +1,19 @@
+{
+  "name": "kargo-{{plugin_name}}",
+  "version": "0.1.0",
+  "description": "{{plugin_description}}",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "{{author_name}} <{{author_email}}>",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "build:wasm": "npm run build && wasm-pack build --target web --out-dir wasm",
+    "test": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "wasm-pack": "^0.12.0"
+  }
+}

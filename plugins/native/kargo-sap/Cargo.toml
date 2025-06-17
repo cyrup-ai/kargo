@@ -1,0 +1,20 @@
+[package]
+name = "kargo-sap"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+kargo-plugin-api = { path = "../../../kargo-plugin/kargo-plugin-api" }
+tokio = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+
+# For directory listing
+jwalk = { workspace = true }

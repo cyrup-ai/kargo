@@ -1,0 +1,35 @@
+[package]
+name = "kargo-kurate"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "kargo_kurate"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+rayon = { workspace = true }
+jwalk = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml_ok = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+log = { workspace = true }
+env_logger = { workspace = true }
+indicatif = { workspace = true }
+tempfile = { workspace = true }
+tokio-stream = { workspace = true, features = ["sync"] }
+toml_edit = { workspace = true }
+futures = { workspace = true }
+directories = { workspace = true }
+cargo_metadata = { workspace = true }
+regex = { workspace = true }
+clap = { workspace = true, features = ["derive", "cargo"] }
+once_cell = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+reqwest = { workspace = true, features = ["json", "stream", "blocking"] }
+cargo-manifest = { workspace = true }
+
+[dev-dependencies]
+assert_fs = { workspace = true }
+predicates = { workspace = true }

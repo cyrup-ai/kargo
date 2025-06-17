@@ -1,0 +1,48 @@
+[package]
+name = "kargo-mddoc"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+description = "A tool to generate, format and present well-formed markdown from rustdoc."
+keywords = ["documentation", "rustdoc", "markdown", "api", "docs"]
+categories = ["development-tools", "command-line-utilities"]
+
+[dependencies]
+# Plugin API
+kargo-plugin-api = { workspace = true }
+
+# Command line argument parsing
+clap = { workspace = true, features = ["derive"] }
+indicatif = { workspace = true }
+rustdoc-types = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+eyre = { workspace = true }
+
+# Utilities
+tempfile = { workspace = true }
+semver = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+fs_extra = { workspace = true }
+dirs = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["fs", "rt", "macros"] }
+
+# TOML editing
+toml_edit = { workspace = true }
+lazy_static = { workspace = true }
+kargo-plugin-macros = { version = "0.1.0", path = "../../../kargo-plugin/kargo-plugin-macros" }
+
+[lib]
+name = "kargo_mddoc"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]

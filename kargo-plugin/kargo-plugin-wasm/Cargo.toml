@@ -1,0 +1,9 @@
+[package]
+name = "kargo-plugin-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+extism = { workspace = true }

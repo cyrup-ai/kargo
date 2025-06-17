@@ -1,0 +1,2 @@
+# Extism Python PDK for building WASM plugins
+extism-pdk>=1.0.0

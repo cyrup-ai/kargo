@@ -1,0 +1,41 @@
+[package]
+name = "kargo-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "kargo"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+libloading = { workspace = true }
+dirs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+extism = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+regex = { workspace = true }
+
+
+jwalk = { workspace = true }
+rayon = { workspace = true }
+toml_edit = { workspace = true }
+futures = { workspace = true }
+cargo_metadata = { workspace = true }
+tempfile = { workspace = true }
+directories = { workspace = true }
+serde_yaml = { workspace = true }
+which = { workspace = true }
+
+
+syn = { workspace = true, features = ["full"] }
+kargo-plugin-api = { version = "0.1.0", path = "../kargo-plugin/kargo-plugin-api" }
+
+[dev-dependencies]
+assert_fs = { workspace = true }
+predicates = { workspace = true }
