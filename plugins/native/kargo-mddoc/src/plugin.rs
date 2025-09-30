@@ -110,7 +110,7 @@ impl PluginCommand for MddocPlugin {
                 .clone();
             // Parse package name from package_spec
             let package_name = package_spec.split('@').next().unwrap_or(&package_spec);
-            
+
             let output_dir = matches
                 .get_one::<String>("output")
                 .map(|s| PathBuf::from(s))

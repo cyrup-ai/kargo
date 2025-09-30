@@ -1,14 +1,14 @@
 [package]
 name = "kargo-mdlint"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 kargo-plugin-api = { workspace = true }
-mado = { path = "../../../mado" }
+mado = { git = "https://github.com/akiomik/mado.git", branch = "main" }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 globset = { workspace = true }

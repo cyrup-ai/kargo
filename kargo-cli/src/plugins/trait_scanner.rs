@@ -34,19 +34,16 @@ pub fn verify_native_plugin(source_path: &Path) -> Result<PluginInfo> {
                     );
                 } else if is_plugin_command_impl(&impl_item) {
                     plugin_info.implements_plugin_command = true;
-                    info!("Found PluginCommand implementation (legacy)");
                 }
             }
             Item::Static(static_item) => {
                 if is_plugin_declaration(&static_item) {
                     plugin_info.has_declaration = true;
-                    info!("Found plugin declaration");
                 }
             }
             Item::Fn(fn_item) => {
                 if is_plugin_create_function(&fn_item) {
                     plugin_info.has_create_function = true;
-                    info!("Found kargo_plugin_create function");
                 }
             }
             _ => {}

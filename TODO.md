@@ -49,3 +49,24 @@ We need to fix the markdown generation to produce lint-compliant output.
 3. Fix H1/H2 hierarchy issues
 4. Add blank lines around code blocks and lists
 5. Test with kargo mdlint after each fix
+
+---
+
+# Workspace Lint/Check TODO (Generated 2025-08-07 18:40:24-07:00)
+
+## kargo-cli/src/plugins/manager.rs
+
+- [ ] Warning: unused variable `name` when scanning native plugins directory
+  - Location: `kargo-cli/src/plugins/manager.rs` (around discovery under `plugins/native`)
+  - Proposed fix: Log discovered plugin candidate names via `log::info!` to surface what is found. This makes the variable meaningfully used and improves observability.
+  - QA Task: Act as an Objective Rust Expert and rate the quality of the fix on a scale of 1 - 10 (complete failure through significant improvement). Provide specific feedback on any issues or truly great work (objectively without bragging).
+
+- [ ] Warning: unused variable `name` when scanning wasm plugins directory
+  - Location: `kargo-cli/src/plugins/manager.rs` (around discovery under `plugins/wasm`)
+  - Proposed fix: Log discovered WASM plugin candidate names via `log::info!`.
+  - QA Task: Act as an Objective Rust Expert and rate the quality of the fix on a scale of 1 - 10 (complete failure through significant improvement). Provide specific feedback on any issues or truly great work (objectively without bragging).
+
+- [ ] Warning: unused variable `name` when iterating loaded plugins at end of discovery
+  - Location: `kargo-cli/src/plugins/manager.rs` (end of `discover_and_load_plugins`)
+  - Proposed fix: Emit `info!` per loaded plugin (e.g., `info!("Loaded plugin: {}", name);`) to confirm successful load and use the variable meaningfully.
+  - QA Task: Act as an Objective Rust Expert and rate the quality of the fix on a scale of 1 - 10 (complete failure through significant improvement). Provide specific feedback on any issues or truly great work (objectively without bragging).

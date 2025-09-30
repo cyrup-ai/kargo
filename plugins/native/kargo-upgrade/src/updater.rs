@@ -1,5 +1,7 @@
 //! Module for updating dependencies to their latest versions
 
+use semver::Version;
+
 use crate::{
     crates_io::get_latest_version,
     models::{Dependency, DependencyUpdate, DependencyUpdater},
@@ -23,7 +25,7 @@ impl DependencyUpdater for CratesIoUpdater {
     fn update(&self, dependency: &Dependency) -> PendingDependencyUpdate {
         // Clone what we need for the async task
         let dependency = dependency.clone();
-        let _options = self.options.clone(); // Unused for now but may be needed later
+        let options = self.options.clone();
 
         // Create a future that will be performed asynchronously
         let update_future = async move {
@@ -34,13 +36,31 @@ impl DependencyUpdater for CratesIoUpdater {
                 dependency.version.clone()
             };
 
+            // Determine if we allow pre-releases
+            // When compatible_only is true, we want stable versions only
+            let allow_prerelease = !options.compatible_only;
+
             // Get the latest version from crates.io
-            let to_version = get_latest_version(&dependency.name).await?;
+            let to_version = get_latest_version(&dependency.name, allow_prerelease).await?;
 
             if let Some(to_version) = to_version {
                 // Skip if already at latest version
                 if !dependency.version.is_empty() && dependency.version == to_version {
                     return Ok(None);
+                }
+
+                // Parse versions for semver comparison
+                if options.compatible_only && !dependency.version.is_empty() {
+                    // Use semver to check compatibility
+                    if let (Ok(from), Ok(to)) = (
+                        Version::parse(&dependency.version),
+                        Version::parse(&to_version),
+                    ) {
+                        // Skip major version bumps when compatible_only is true
+                        if to.major > from.major {
+                            return Ok(None);
+                        }
+                    }
                 }
 
                 // Return the update

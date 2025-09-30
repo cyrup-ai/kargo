@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
     // Step 3: Check project status concurrently
     let projects = check_project_status(projects).await?;
 
-    // Step 4: Analyze project relationships (simplified for now)
+    // Step 4: Analyze project relationships
     let projects_with_relationships = analyze_relationships(projects);
 
     // Step 5: Generate index.yaml
@@ -280,10 +280,82 @@ async fn check_single_project_status(project_path: &str) -> ProjectStatus {
     }
 }
 
-fn analyze_relationships(projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
+fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
     println!("Analyzing project relationships...");
-    // For this simple implementation, we'll just return the projects without modification
-    // In a more complex implementation, this could analyze dependencies and workspace relationships
+
+    // Build lookup maps
+    let project_map: HashMap<String, (usize, String)> = projects
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.name.clone(), (i, p.path.clone())))
+        .collect();
+
+    // Build dependency usage graph: dependency -> list of projects using it
+    let mut dep_usage: HashMap<String, Vec<String>> = HashMap::new();
+    for project in &projects {
+        for dep in &project.dependencies {
+            dep_usage
+                .entry(dep.clone())
+                .or_default()
+                .push(project.name.clone());
+        }
+    }
+
+    // Calculate shared dependencies (used by 2+ projects)
+    let shared_deps: Vec<String> = dep_usage
+        .iter()
+        .filter(|(_, users)| users.len() >= 2)
+        .map(|(dep, _)| dep.clone())
+        .collect();
+
+    // Process each project
+    for i in 0..projects.len() {
+        // Handle workspace roots
+        if projects[i].is_workspace {
+            let member_count = projects[i].workspace_members.len();
+            projects[i].indicators.insert(
+                "workspace_members".to_string(),
+                member_count.to_string(),
+            );
+
+            // Link members to this workspace root
+            let root_path = projects[i].path.clone();
+            for member_name in &projects[i].workspace_members.clone() {
+                if let Some(&(member_idx, _)) = project_map.get(member_name) {
+                    projects[member_idx].indicators.insert(
+                        "workspace_root".to_string(),
+                        root_path.clone(),
+                    );
+                }
+            }
+        }
+
+        // Add reverse dependencies (who depends on this project)
+        if let Some(dependents) = dep_usage.get(&projects[i].name) {
+            if !dependents.is_empty() {
+                projects[i].indicators.insert(
+                    "dependents".to_string(),
+                    dependents.join(","),
+                );
+            }
+        }
+
+        // Add shared dependencies this project uses
+        let project_shared_deps: Vec<String> = projects[i]
+            .dependencies
+            .iter()
+            .filter(|dep| shared_deps.contains(dep))
+            .cloned()
+            .collect();
+
+        if !project_shared_deps.is_empty() {
+            projects[i].indicators.insert(
+                "shared_deps".to_string(),
+                project_shared_deps.join(","),
+            );
+        }
+    }
+
     projects
 }
 

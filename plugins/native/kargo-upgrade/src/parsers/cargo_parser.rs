@@ -1,6 +1,6 @@
 //! Parser for Cargo.toml files
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use toml_edit::{DocumentMut as Document, Item, Table};
 
 use crate::models::{Dependency, DependencyLocation, DependencyParser, DependencySource};

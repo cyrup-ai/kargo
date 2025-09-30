@@ -15,6 +15,7 @@ kargo-plugin-api = { path = "../../../kargo-plugin/kargo-plugin-api" }
 tokio = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
+reqwest = { workspace = true }
 
 # For directory listing
 jwalk = { workspace = true }

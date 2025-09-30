@@ -27,12 +27,11 @@ pub mod vendor;
 // Export types for convenience
 pub use project::{ProjectAnalyzer, ProjectType};
 pub use rustscript::RustScript;
-// These types would come from kargo-upgrade if we were using it
-// For now, we'll comment them out until we integrate kargo-upgrade
-// pub use kargo_upgrade::types::{
-//     CrateType, DependencyUpdate, SendFuture, UpdateCollector, UpdateResult, UpdateSession,
-//     UpdateWatcher, VersionUpdater, VersionUpdaterOptions,
-// };
+// Re-export kargo-upgrade types for use throughout the CLI
+pub use kargo_upgrade::types::{
+    CrateType, DependencyUpdate, SendFuture, UpdateCollector, UpdateResult, UpdateSession,
+    UpdateWatcher, VersionUpdater, VersionUpdaterOptions,
+};
 
 // Domain-specific type for representing an update job
 pub struct DependencyUpdateJob<'a> {
@@ -70,9 +69,7 @@ pub struct DependencyUpdater {
 
 impl DependencyUpdater {
     pub fn new() -> Self {
-        let config = Config::load()
-            .map_err(|e| log::error!("Failed to load config: {}", e))
-            .unwrap_or_default();
+        let config = Config::load().unwrap_or_default();
         let events = EventBus::new();
 
         let scan_dirs = std::env::var("KRATER_SCAN")
@@ -81,12 +78,7 @@ impl DependencyUpdater {
                 vec![
                     std::env::var("HOME")
                         .map(PathBuf::from)
-                        .unwrap_or_else(|_| {
-                            log::warn!(
-                                "HOME environment variable not set, using current directory"
-                            );
-                            PathBuf::from(".")
-                        }),
+                        .unwrap_or_else(|_| PathBuf::from(".")),
                 ]
             });
 
@@ -124,10 +116,7 @@ impl DependencyUpdater {
         let backup = if self.config.rollback_on_failure {
             match BackupManager::new(self.events.clone()) {
                 Ok(bm) => Some(bm),
-                Err(e) => {
-                    log::error!("Failed to create backup manager: {}", e);
-                    None
-                }
+                Err(_) => None,
             }
         } else {
             None

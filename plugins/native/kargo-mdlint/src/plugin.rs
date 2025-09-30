@@ -73,7 +73,10 @@ impl PluginCommand for MdlintPlugin {
                 };
 
                 let mado_cmd = mado::Cli::command();
-                let mut generator = mado::command::generate_shell_completion::ShellCompletionGenerator::new(mado_cmd);
+                let mut generator =
+                    mado::command::generate_shell_completion::ShellCompletionGenerator::new(
+                        mado_cmd,
+                    );
                 generator.generate(shell);
                 return Ok(());
             }
@@ -96,8 +99,9 @@ impl PluginCommand for MdlintPlugin {
                 .map(|values| {
                     values
                         .map(|pattern| {
-                            Glob::new(pattern)
-                                .map_err(|e| anyhow::anyhow!("Invalid glob pattern '{}': {}", pattern, e))
+                            Glob::new(pattern).map_err(|e| {
+                                anyhow::anyhow!("Invalid glob pattern '{}': {}", pattern, e)
+                            })
                         })
                         .collect::<Result<Vec<_>>>()
                 })
@@ -114,12 +118,15 @@ impl PluginCommand for MdlintPlugin {
             };
 
             // Convert to mado config
-            let config = options.to_config().map_err(|e| anyhow::anyhow!("Config error: {}", e))?;
+            let config = options
+                .to_config()
+                .map_err(|e| anyhow::anyhow!("Config error: {}", e))?;
 
             // Create checker and run
             let checker = mado::command::check::Checker::new(&files, config)
                 .map_err(|e| anyhow::anyhow!("Checker creation error: {}", e))?;
-            let exit_code = checker.check()
+            let exit_code = checker
+                .check()
                 .map_err(|e| anyhow::anyhow!("Check error: {}", e))?;
 
             // Convert ExitCode to Result for plugin API
@@ -131,7 +138,7 @@ impl PluginCommand for MdlintPlugin {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(improper_ctypes_definitions)]
 #[allow(unsafe_code)]
 pub extern "C" fn kargo_plugin_create() -> Box<dyn PluginCommand> {

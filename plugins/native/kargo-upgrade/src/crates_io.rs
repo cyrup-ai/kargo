@@ -1,6 +1,6 @@
 //! Crates.io API client for querying the latest versions of crates
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde_json::Value;
@@ -18,9 +18,10 @@ static CLIENT: Lazy<Client> = Lazy::new(|| {
 
 /// Get the latest version of a crate from crates.io
 /// Returns a Future that resolves to the latest version
-pub async fn get_latest_version(crate_name: &str) -> Result<Option<String>> {
+pub async fn get_latest_version(crate_name: &str, allow_prerelease: bool) -> Result<Option<String>> {
     let future = VersionFuture {
         crate_name: crate_name.to_string(),
+        allow_prerelease,
     };
     future.fetch().await
 }
@@ -28,6 +29,7 @@ pub async fn get_latest_version(crate_name: &str) -> Result<Option<String>> {
 /// Domain-specific type for fetching a crate version
 pub struct VersionFuture {
     crate_name: String,
+    allow_prerelease: bool,
 }
 
 impl VersionFuture {
@@ -45,10 +47,17 @@ impl VersionFuture {
 
                     match response.json::<Value>().await {
                         Ok(data) => {
+                            // Choose version field based on preference
+                            let version_field = if self.allow_prerelease {
+                                "max_version"
+                            } else {
+                                "max_stable_version"
+                            };
+
                             // Extract the latest version
                             let version = data
                                 .get("crate")
-                                .and_then(|c| c.get("max_version"))
+                                .and_then(|c| c.get(version_field))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
 

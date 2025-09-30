@@ -330,7 +330,8 @@ pub async fn update_markdown(
                             .as_str();
 
                         // Get the latest version
-                        if let Ok(Some(latest)) = get_latest_version(name).await {
+                        let allow_prerelease = !_options.compatible_only;
+                        if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                             if version != latest {
                                 let dummy_dep = Dependency {
                                     name: name.to_string(),
@@ -362,7 +363,8 @@ pub async fn update_markdown(
                             .as_str();
 
                         // Get the latest version
-                        if let Ok(Some(latest)) = get_latest_version(name).await {
+                        let allow_prerelease = !_options.compatible_only;
+                        if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                             if version != latest {
                                 let dummy_dep = Dependency {
                                     name: name.to_string(),
@@ -464,7 +466,8 @@ pub async fn update_markdown(
                     .as_str();
 
                 // Get the latest version
-                if let Ok(Some(latest)) = get_latest_version(name).await {
+                let allow_prerelease = !options.compatible_only;
+                if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                     if version != latest {
                         // Update in the deps string
                         let replace_regex = Regex::new(&format!(
@@ -498,7 +501,8 @@ pub async fn update_markdown(
                     .as_str();
 
                 // Get the latest version
-                if let Ok(Some(latest)) = get_latest_version(name).await {
+                let allow_prerelease = !options.compatible_only;
+                if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                     if version != latest {
                         // Update in the deps string
                         let replace_regex = Regex::new(&format!(
@@ -531,7 +535,8 @@ pub async fn update_markdown(
                 }
 
                 // Get the latest version
-                if let Ok(Some(latest)) = get_latest_version(name).await {
+                let allow_prerelease = !options.compatible_only;
+                if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                     // Replace bare dependency with versioned one
                     let bare_dep_pattern = format!(r"(?:^|,)\s*{}(?:\s*,|$)", regex::escape(name));
                     let bare_dep_regex = Regex::new(&bare_dep_pattern)?;

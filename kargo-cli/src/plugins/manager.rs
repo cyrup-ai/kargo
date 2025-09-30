@@ -35,8 +35,6 @@ impl PluginManager {
                 .parent()
                 .map(|p| p.to_path_buf());
             if let Some(root) = workspace_root {
-                info!("Discovering workspace plugins in {}", root.display());
-
                 // Look for plugins in plugins/native directory
                 let native_plugins_dir = root.join("plugins").join("native");
                 if native_plugins_dir.is_dir() {
@@ -49,7 +47,7 @@ impl PluginManager {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
                                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                    info!("Found native plugin: {}", name);
+                                    info!("Discovered native plugin candidate: {}", name);
                                     sp.push(path);
                                 }
                             }
@@ -60,22 +58,62 @@ impl PluginManager {
                 // Look for plugins in plugins/wasm directory
                 let wasm_plugins_dir = root.join("plugins").join("wasm");
                 if wasm_plugins_dir.is_dir() {
-                    info!("Scanning WASM plugins in {}", wasm_plugins_dir.display());
                     if let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
                                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                    info!("Found WASM plugin: {}", name);
+                                    info!("Discovered WASM plugin candidate: {}", name);
                                     sp.push(path);
                                 }
                             } else if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
-                                info!("Found compiled WASM plugin: {}", path.display());
-                                sp.push(path.parent().unwrap().to_path_buf());
+                                if let Some(parent) = path.parent() {
+                                    if let Some(name) = parent.file_name().and_then(|n| n.to_str())
+                                    {
+                                        info!(
+                                            "Discovered standalone WASM module for plugin: {}",
+                                            name
+                                        );
+                                    }
+                                    sp.push(parent.to_path_buf());
+                                }
                             }
                         }
                     }
                 }
+            }
+        } else {
+            // Try compile-time workspace root
+            if let Some(workspace_root) = option_env!("KARGO_WORKSPACE_ROOT") {
+                // When installed, use the compile-time workspace root
+                let workspace_path = PathBuf::from(workspace_root);
+
+                // Look for plugins in plugins/native directory
+                let native_plugins_dir = workspace_path.join("plugins").join("native");
+                if native_plugins_dir.is_dir() {
+                    if let Ok(entries) = fs::read_dir(&native_plugins_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() && path.join("Cargo.toml").exists() {
+                                sp.push(path);
+                            }
+                        }
+                    }
+                }
+
+                // Look for plugins in plugins/wasm directory
+                let wasm_plugins_dir = workspace_path.join("plugins").join("wasm");
+                if wasm_plugins_dir.is_dir() {
+                    if let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() && path.join("Cargo.toml").exists() {
+                                sp.push(path);
+                            }
+                        }
+                    }
+                }
+            } else {
             }
         }
 
@@ -101,7 +139,6 @@ impl PluginManager {
 
             // Check if this directory itself is a plugin (for workspace siblings)
             if d.join("Cargo.toml").is_file() {
-                info!("Loading plugin project: {}", d.display());
                 match self.build_and_load_rust_project(&d) {
                     Ok(_) => info!("Successfully loaded plugin from {}", d.display()),
                     Err(e) => info!("Failed to load plugin from {}: {}", d.display(), e),
@@ -110,7 +147,6 @@ impl PluginManager {
             }
 
             // Otherwise scan for subdirectories (for .kargo/plugins style)
-            info!("Scanning {}", d.display());
             for entry in fs::read_dir(d)? {
                 let path = entry?.path();
                 if path.is_dir() && path.join("Cargo.toml").is_file() {
@@ -134,9 +170,8 @@ impl PluginManager {
             }
         }
 
-        info!("Total plugins loaded: {}", self.plugins.len());
         for (name, _) in &self.plugins {
-            info!("  - {}", name);
+            info!("Loaded plugin: {}", name);
         }
 
         Ok(())
@@ -152,8 +187,6 @@ impl PluginManager {
 
     /* -------- raw Rust project -------- */
     fn build_and_load_rust_project(&mut self, dir: &Path) -> Result<()> {
-        info!("Compiling plugin at {}", dir.display());
-
         // First, verify the plugin implements the required traits
         self.verify_plugin_traits(dir)?;
 
@@ -209,15 +242,9 @@ impl PluginManager {
             anyhow::bail!("No lib.rs or main.rs found in {}", src_dir.display());
         };
 
-        info!("Verifying plugin traits in {}", source_file.display());
-
         match trait_scanner::verify_native_plugin(&source_file) {
-            Ok(plugin_info) => {
-                info!("Plugin verification successful: {:?}", plugin_info);
-                Ok(())
-            }
-            Err(e) => {
-                info!("Plugin verification failed: {}", e);
+            Ok(_plugin_info) => Ok(()),
+            Err(_) => {
                 // Don't fail hard - allow plugins that don't use traits yet
                 // This is for backward compatibility
                 Ok(())

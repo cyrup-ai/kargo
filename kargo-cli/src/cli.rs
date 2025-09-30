@@ -17,6 +17,23 @@ pub fn build_root_cli(pm: &PluginManager) -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .conflicts_with("help"),
         )
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .help("Increase logging verbosity")
+                .action(clap::ArgAction::Count)
+                .global(true),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .help("Decrease logging verbosity")
+                .action(clap::ArgAction::SetTrue)
+                .global(true)
+                .conflicts_with("verbose"),
+        )
         .subcommand_required(false) // Don't require subcommand when using --alias
         .arg_required_else_help(true)
         .allow_external_subcommands(true);

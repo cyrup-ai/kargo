@@ -1,6 +1,6 @@
 //! Writer for Cargo.toml files
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use tokio::fs;
 use toml_edit::{DocumentMut as Document, Item, Value};
