@@ -66,7 +66,7 @@ impl DependencySource {
         let content = fs::read_to_string(&path).await?;
 
         // Check if it's a Cargo.toml file
-        if path.file_name().map_or(false, |name| name == "Cargo.toml") {
+        if path.file_name().is_some_and(|name| name == "Cargo.toml") {
             // Check if it's a workspace Cargo.toml
             let is_workspace = content.contains("[workspace]");
 
@@ -110,6 +110,16 @@ impl DependencySource {
         match self {
             DependencySource::CargoToml { content, .. } => *content = new_content,
             DependencySource::RustScript { content, .. } => *content = new_content,
+        }
+    }
+
+    /// Create a dependency source from content (for testing)
+    ///
+    /// This is primarily used in tests to create sources without needing actual files
+    pub fn from_content(content: String) -> Self {
+        DependencySource::RustScript {
+            path: PathBuf::from("test.rs"),
+            content,
         }
     }
 }

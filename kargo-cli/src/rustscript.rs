@@ -54,6 +54,9 @@ impl RustScript {
             r"//\s*```cargo\s*\n(//\s*[\s\S]*?)```",
         ];
 
+        // Compile the line regex once outside the loop
+        let line_regex = Regex::new(r"^(//!?)\s?")?;
+
         for pattern in patterns {
             let regex = Regex::new(pattern)?;
 
@@ -65,7 +68,6 @@ impl RustScript {
                     // Clean up content if it has comment prefixes
                     let cleaned_content =
                         if cargo_content.starts_with("//!") || cargo_content.starts_with("//") {
-                            let line_regex = Regex::new(r"^(//!?)\s?")?;
                             line_regex.replace_all(cargo_content, "").to_string()
                         } else {
                             cargo_content.to_string()
@@ -98,25 +100,25 @@ impl RustScript {
         dependencies: &mut HashMap<String, String>,
     ) {
         // Check standard dependencies section
-        if let Some(deps) = doc.get("dependencies") {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, value) in deps_table.iter() {
-                    // Extract version based on format
-                    if let Some(version) = extract_version(value) {
-                        dependencies.insert(key.to_string(), version);
-                    }
+        if let Some(deps) = doc.get("dependencies")
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, value) in deps_table.iter() {
+                // Extract version based on format
+                if let Some(version) = extract_version(value) {
+                    dependencies.insert(key.to_string(), version);
                 }
             }
         }
 
         // Also check dev-dependencies
-        if let Some(deps) = doc.get("dev-dependencies") {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, value) in deps_table.iter() {
-                    // Extract version based on format
-                    if let Some(version) = extract_version(value) {
-                        dependencies.insert(key.to_string(), version);
-                    }
+        if let Some(deps) = doc.get("dev-dependencies")
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, value) in deps_table.iter() {
+                // Extract version based on format
+                if let Some(version) = extract_version(value) {
+                    dependencies.insert(key.to_string(), version);
                 }
             }
         }
@@ -238,24 +240,10 @@ impl RustScript {
 /// Extract version from a TOML value
 fn extract_version(value: &toml_edit::Item) -> Option<String> {
     match value {
-        toml_edit::Item::Value(value) => {
-            if let Some(version) = value.as_str() {
-                Some(version.to_string())
-            } else {
-                None
-            }
-        }
-        toml_edit::Item::Table(table) => {
-            if let Some(version) = table.get("version") {
-                if let Some(version_str) = version.as_str() {
-                    Some(version_str.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }
+        toml_edit::Item::Value(value) => value.as_str().map(|version| version.to_string()),
+        toml_edit::Item::Table(table) => table
+            .get("version")
+            .and_then(|version| version.as_str().map(|version_str| version_str.to_string())),
         _ => None,
     }
 }

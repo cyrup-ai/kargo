@@ -118,7 +118,7 @@ impl RustScriptWriter {
     ) -> Result<()> {
         // Update simple format: name = "version"
         let pattern_str = VERSION_PATTERN.as_str();
-        let simple_pattern = format!("{}", pattern_str)
+        let simple_pattern = pattern_str.to_string()
             .replace("{}", &regex::escape(name))
             .replace("{}", &regex::escape(from_version));
         let simple_regex = Regex::new(&simple_pattern)?;
@@ -128,7 +128,7 @@ impl RustScriptWriter {
 
         // Update table format: name = { version = "version", ... }
         let table_str = TABLE_VERSION_PATTERN.as_str();
-        let table_pattern = format!("{}", table_str)
+        let table_pattern = table_str.to_string()
             .replace("{}", &regex::escape(name))
             .replace("{}", &regex::escape(from_version));
         let table_regex = Regex::new(&table_pattern)?;
@@ -170,7 +170,7 @@ impl RustScriptWriter {
         // If none of our patterns matched exactly, use regex for replacement
         if !replaced {
             let pattern_str = VERSION_PATTERN.as_str();
-            let version_pattern = format!("{}", pattern_str)
+            let version_pattern = pattern_str.to_string()
                 .replace("{}", &regex::escape(name))
                 .replace("{}", &regex::escape(from_version));
             let version_regex = Regex::new(&version_pattern)?;
@@ -190,7 +190,7 @@ impl RustScriptWriter {
         version: &str,
     ) -> Result<()> {
         let bare_str = BARE_DEP_PATTERN.as_str();
-        let bare_pattern = format!("{}", bare_str).replace("{}", &regex::escape(name));
+        let bare_pattern = bare_str.to_string().replace("{}", &regex::escape(name));
         let bare_regex = Regex::new(&bare_pattern)?;
 
         // Check how the dependency is specified in the content

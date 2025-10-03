@@ -19,7 +19,7 @@ pub fn convert_to_markdown(json_path: &Path) -> Result<PathBuf, Error> {
     let json_content = utils::read_file(json_path)?;
 
     // Parse the JSON into the rustdoc structure
-    let data: Crate = serde_json::from_str(&json_content).map_err(|e| Error::JsonParse(e))?;
+    let data: Crate = serde_json::from_str(&json_content).map_err(Error::JsonParse)?;
 
     // Generate Markdown content
     debug!("Generating Markdown content");
@@ -57,7 +57,7 @@ pub fn rustdoc_json_to_markdown(data: &Crate) -> String {
     log::info!("Root module ID: {:?}", data.root);
 
     // Process the root module to start
-    let root_id = data.root.clone();
+    let root_id = data.root;
     if let Some(root_item) = data.index.get(&root_id) {
         if let ItemEnum::Module(module) = &root_item.inner {
             log::info!("Root module has {} direct items", module.items.len());
@@ -101,20 +101,20 @@ fn process_items(output: &mut String, item_ids: &[Id], data: &Crate, level: usiz
     for id in item_ids.iter() {
         if let Some(item) = data.index.get(id) {
             match &item.inner {
-                ItemEnum::Module(_) => modules.push(id.clone()),
+                ItemEnum::Module(_) => modules.push(*id),
                 ItemEnum::Struct(_)
                 | ItemEnum::Enum(_)
                 | ItemEnum::Union(_)
-                | ItemEnum::TypeAlias(_) => types.push(id.clone()),
-                ItemEnum::Trait(_) | ItemEnum::TraitAlias(_) => traits.push(id.clone()),
-                ItemEnum::Function(_) => functions.push(id.clone()),
-                ItemEnum::Constant { .. } | ItemEnum::Static(_) => constants.push(id.clone()),
-                ItemEnum::Macro(_) | ItemEnum::ProcMacro(_) => macros.push(id.clone()),
-                ItemEnum::ExternCrate { .. } => reexports.push(id.clone()),
-                ItemEnum::Use(_) => reexports.push(id.clone()),
+                | ItemEnum::TypeAlias(_) => types.push(*id),
+                ItemEnum::Trait(_) | ItemEnum::TraitAlias(_) => traits.push(*id),
+                ItemEnum::Function(_) => functions.push(*id),
+                ItemEnum::Constant { .. } | ItemEnum::Static(_) => constants.push(*id),
+                ItemEnum::Macro(_) | ItemEnum::ProcMacro(_) => macros.push(*id),
+                ItemEnum::ExternCrate { .. } => reexports.push(*id),
+                ItemEnum::Use(_) => reexports.push(*id),
                 _ => {
                     // Put all unrecognized items in other_items
-                    other_items.push(id.clone());
+                    other_items.push(*id);
                 }
             }
         }
@@ -408,7 +408,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                     } => {
                         output.push_str(" {\n");
                         for field_id in fields {
-                            if let Some(field_item) = data.index.get(&field_id) {
+                            if let Some(field_item) = data.index.get(field_id) {
                                 if let Some(field_name) = &field_item.name {
                                     if let ItemEnum::StructField(field_type) = &field_item.inner {
                                         // Field visibility
@@ -474,7 +474,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                 output.push_str(" {\n");
 
                 for field_id in &union_.fields {
-                    if let Some(field_item) = data.index.get(&field_id) {
+                    if let Some(field_item) = data.index.get(field_id) {
                         if let Some(field_name) = &field_item.name {
                             if let ItemEnum::StructField(field_type) = &field_item.inner {
                                 match &field_item.visibility {
@@ -663,7 +663,7 @@ fn format_where_clause(
                 output.push_str(&format_type(lhs, data));
                 output.push_str(" = ");
                 match rhs {
-                    rustdoc_types::Term::Type(type_) => output.push_str(&format_type(&type_, data)),
+                    rustdoc_types::Term::Type(type_) => output.push_str(&format_type(type_, data)),
                     rustdoc_types::Term::Constant(constant) => output.push_str(&constant.expr),
                 }
             }
@@ -768,7 +768,7 @@ fn format_generic_args(output: &mut String, args: &GenericArgs, data: &Crate) {
                     AssocItemConstraintKind::Equality(term) => {
                         output.push_str(" = ");
                         match term {
-                            Term::Type(type_) => output.push_str(&format_type(&type_, data)),
+                            Term::Type(type_) => output.push_str(&format_type(type_, data)),
                             Term::Constant(constant) => output.push_str(&constant.expr),
                         }
                     }
@@ -1141,7 +1141,7 @@ fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &
         output.push_str(" {\n");
 
         for variant_id in &enum_.variants {
-            if let Some(variant_item) = data.index.get(&variant_id) {
+            if let Some(variant_item) = data.index.get(variant_id) {
                 if let Some(variant_name) = &variant_item.name {
                     output.push_str(&format!("    {}", variant_name));
 
@@ -1178,7 +1178,7 @@ fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &
                             } => {
                                 output.push_str(" {\n");
                                 for field_id in fields {
-                                    if let Some(field_item) = data.index.get(&field_id) {
+                                    if let Some(field_item) = data.index.get(field_id) {
                                         if let Some(field_name) = &field_item.name {
                                             if let ItemEnum::StructField(field_type) =
                                                 &field_item.inner
@@ -1360,7 +1360,7 @@ fn process_struct_details(
             output.push_str("|------|------|---------------|\n");
 
             for field_id in fields {
-                if let Some(field_item) = data.index.get(&field_id) {
+                if let Some(field_item) = data.index.get(field_id) {
                     if let Some(field_name) = &field_item.name {
                         if let ItemEnum::StructField(field_type) = &field_item.inner {
                             let docs = match field_item.docs.as_deref() {
@@ -1399,7 +1399,7 @@ fn process_struct_details(
         let mut inherent_impls = Vec::new();
 
         for impl_id in &struct_.impls {
-            if let Some(impl_item) = data.index.get(&impl_id) {
+            if let Some(impl_item) = data.index.get(impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
                         let trait_name = trait_.path.clone();
@@ -1423,10 +1423,10 @@ fn process_struct_details(
                 "#".repeat(std::cmp::min(heading_level + 1, 6))
             ));
             for impl_id in &inherent_impls {
-                if let Some(impl_item) = data.index.get(&impl_id) {
+                if let Some(impl_item) = data.index.get(impl_id) {
                     if let ItemEnum::Impl(impl_) = &impl_item.inner {
                         for item_id in &impl_.items {
-                            if let Some(method_item) = data.index.get(&item_id) {
+                            if let Some(method_item) = data.index.get(item_id) {
                                 if let ItemEnum::Function(_) = &method_item.inner {
                                     // Format method signature
                                     let mut method_signature = String::new();
@@ -1434,7 +1434,7 @@ fn process_struct_details(
 
                                     // Output with proper code block formatting
                                     output.push_str("- ```rust\n  ");
-                                    output.push_str(&method_signature.trim());
+                                    output.push_str(method_signature.trim());
                                     output.push_str("\n  ```");
 
                                     // Add documentation if available
@@ -1464,10 +1464,10 @@ fn process_struct_details(
             for (trait_name, impls) in trait_impls {
                 output.push_str(&format!("- **{}**\n", trait_name));
                 for impl_id in &impls {
-                    if let Some(impl_item) = data.index.get(&impl_id) {
+                    if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
                             for item_id in &impl_.items {
-                                if let Some(method_item) = data.index.get(&item_id) {
+                                if let Some(method_item) = data.index.get(item_id) {
                                     if let ItemEnum::Function(_) = &method_item.inner {
                                         // Format method signature
                                         let mut method_signature = String::new();
@@ -1479,7 +1479,7 @@ fn process_struct_details(
 
                                         // Output with proper code block formatting
                                         output.push_str("  - ```rust\n    ");
-                                        output.push_str(&method_signature.trim());
+                                        output.push_str(method_signature.trim());
                                         output.push_str("\n    ```");
 
                                         // Add documentation if available
@@ -1518,7 +1518,7 @@ fn process_enum_details(
     output.push_str(&format!("{} Variants\n\n", "#".repeat(heading_level)));
 
     for variant_id in &enum_.variants {
-        if let Some(variant_item) = data.index.get(&variant_id) {
+        if let Some(variant_item) = data.index.get(variant_id) {
             if let Some(variant_name) = &variant_item.name {
                 // Use heading_level + 1 for individual variants (capped at 6)
                 let variant_heading_level = std::cmp::min(heading_level + 1, 6);
@@ -1584,7 +1584,7 @@ fn process_enum_details(
                             output.push_str("|------|------|---------------|\n");
 
                             for field_id in fields {
-                                if let Some(field_item) = data.index.get(&field_id) {
+                                if let Some(field_item) = data.index.get(field_id) {
                                     if let Some(field_name) = &field_item.name {
                                         if let ItemEnum::StructField(field_type) = &field_item.inner
                                         {
@@ -1638,7 +1638,7 @@ fn process_enum_details(
         let mut inherent_impls = Vec::new();
 
         for impl_id in &enum_.impls {
-            if let Some(impl_item) = data.index.get(&impl_id) {
+            if let Some(impl_item) = data.index.get(impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
                         let trait_name = trait_.path.clone();
@@ -1659,10 +1659,10 @@ fn process_enum_details(
             let methods_level = std::cmp::min(heading_level + 1, 6);
             output.push_str(&format!("{} Methods\n\n", "#".repeat(methods_level)));
             for impl_id in &inherent_impls {
-                if let Some(impl_item) = data.index.get(&impl_id) {
+                if let Some(impl_item) = data.index.get(impl_id) {
                     if let ItemEnum::Impl(impl_) = &impl_item.inner {
                         for item_id in &impl_.items {
-                            if let Some(method_item) = data.index.get(&item_id) {
+                            if let Some(method_item) = data.index.get(item_id) {
                                 if let ItemEnum::Function(_) = &method_item.inner {
                                     // Format method signature
                                     let mut method_signature = String::new();
@@ -1670,7 +1670,7 @@ fn process_enum_details(
 
                                     // Output with proper code block formatting
                                     output.push_str("- ```rust\n  ");
-                                    output.push_str(&method_signature.trim());
+                                    output.push_str(method_signature.trim());
                                     output.push_str("\n  ```");
 
                                     // Add documentation if available
@@ -1700,10 +1700,10 @@ fn process_enum_details(
             for (trait_name, impls) in trait_impls {
                 output.push_str(&format!("- **{}**\n", trait_name));
                 for impl_id in &impls {
-                    if let Some(impl_item) = data.index.get(&impl_id) {
+                    if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
                             for item_id in &impl_.items {
-                                if let Some(method_item) = data.index.get(&item_id) {
+                                if let Some(method_item) = data.index.get(item_id) {
                                     if let ItemEnum::Function(_) = &method_item.inner {
                                         // Format method signature
                                         let mut method_signature = String::new();
@@ -1715,7 +1715,7 @@ fn process_enum_details(
 
                                         // Output with proper code block formatting
                                         output.push_str("  - ```rust\n    ");
-                                        output.push_str(&method_signature.trim());
+                                        output.push_str(method_signature.trim());
                                         output.push_str("\n    ```");
 
                                         // Add documentation if available
@@ -1756,7 +1756,7 @@ fn process_union_details(
     output.push_str("|------|------|---------------|\n");
 
     for field_id in &union_.fields {
-        if let Some(field_item) = data.index.get(&field_id) {
+        if let Some(field_item) = data.index.get(field_id) {
             if let Some(field_name) = &field_item.name {
                 if let ItemEnum::StructField(field_type) = &field_item.inner {
                     let docs = match field_item.docs.as_deref() {
@@ -1792,7 +1792,7 @@ fn process_union_details(
         let mut inherent_impls = Vec::new();
 
         for impl_id in &union_.impls {
-            if let Some(impl_item) = data.index.get(&impl_id) {
+            if let Some(impl_item) = data.index.get(impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     if let Some(trait_) = &impl_.trait_ {
                         let trait_name = trait_.path.clone();
@@ -1813,7 +1813,7 @@ fn process_union_details(
             let methods_level = std::cmp::min(heading_level + 1, 6);
             output.push_str(&format!("{} Methods\n\n", "#".repeat(methods_level)));
             for impl_id in &inherent_impls {
-                process_impl_methods(output, (*impl_id).clone(), data, heading_level + 2);
+                process_impl_methods(output, **impl_id, data, heading_level + 2);
             }
         }
 
@@ -1827,17 +1827,14 @@ fn process_union_details(
             for (trait_name, impls) in trait_impls {
                 output.push_str(&format!("- **{}**\n", trait_name));
                 for impl_id in &impls {
-                    if let Some(impl_item) = data.index.get(&impl_id) {
+                    if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
                             for method_id in &impl_.items {
-                                if let Some(method_item) = data.index.get(&method_id) {
+                                if let Some(method_item) = data.index.get(method_id) {
                                     if let Some(name) = &method_item.name {
                                         output.push_str(&format!("  - `{}`: ", name));
                                         if let Some(docs) = &method_item.docs {
-                                            let first_line = match docs.lines().next() {
-                                                Some(line) => line,
-                                                None => "",
-                                            };
+                                            let first_line: &str = docs.lines().next().unwrap_or_default();
                                             output.push_str(first_line);
                                         }
                                         output.push('\n');
@@ -1885,7 +1882,7 @@ fn process_trait_details(
         let mut assoc_consts = Vec::new();
 
         for item_id in &trait_.items {
-            if let Some(item) = data.index.get(&item_id) {
+            if let Some(item) = data.index.get(item_id) {
                 match &item.inner {
                     ItemEnum::Function(function) => {
                         if function.has_body {
@@ -1918,7 +1915,7 @@ fn process_trait_details(
                     "#".repeat(heading_level + 1)
                 ));
                 for type_id in &assoc_types {
-                    if let Some(type_item) = data.index.get(&type_id) {
+                    if let Some(type_item) = data.index.get(type_id) {
                         if let Some(name) = &type_item.name {
                             output.push_str(&format!("- `{}`", name));
                             if let Some(docs) = &type_item.docs {
@@ -1941,7 +1938,7 @@ fn process_trait_details(
                     "#".repeat(heading_level + 1)
                 ));
                 for const_id in &assoc_consts {
-                    if let Some(const_item) = data.index.get(&const_id) {
+                    if let Some(const_item) = data.index.get(const_id) {
                         if let Some(name) = &const_item.name {
                             output.push_str(&format!("- `{}`", name));
                             if let Some(docs) = &const_item.docs {
@@ -1964,7 +1961,7 @@ fn process_trait_details(
                     "#".repeat(heading_level + 1)
                 ));
                 for method_id in &required_methods {
-                    if let Some(method_item) = data.index.get(&method_id) {
+                    if let Some(method_item) = data.index.get(method_id) {
                         if let Some(name) = &method_item.name {
                             output.push_str(&format!("- `{}`", name));
                             if let Some(docs) = &method_item.docs {
@@ -1989,7 +1986,7 @@ fn process_trait_details(
                 "#".repeat(heading_level)
             ));
             for method_id in &provided_methods {
-                if let Some(method_item) = data.index.get(&method_id) {
+                if let Some(method_item) = data.index.get(method_id) {
                     if let ItemEnum::Function(_) = &method_item.inner {
                         // Format method signature
                         let mut method_signature = String::new();
@@ -1997,7 +1994,7 @@ fn process_trait_details(
 
                         // Output with proper code block formatting
                         output.push_str("- ```rust\n  ");
-                        output.push_str(&method_signature.trim());
+                        output.push_str(method_signature.trim());
                         output.push_str("\n  ```");
 
                         // Add documentation if available
@@ -2024,7 +2021,7 @@ fn process_trait_details(
         output.push_str("This trait is implemented for the following types:\n\n");
 
         for impl_id in &trait_.implementations {
-            if let Some(impl_item) = data.index.get(&impl_id) {
+            if let Some(impl_item) = data.index.get(impl_id) {
                 if let ItemEnum::Impl(impl_) = &impl_item.inner {
                     output.push_str(&format!("- `{}`", format_type(&impl_.for_, data)));
                     // Add generics if present
@@ -2070,9 +2067,9 @@ fn process_impl_details(
         for item_id in &impl_.items {
             if let Some(item) = data.index.get(item_id) {
                 match &item.inner {
-                    ItemEnum::Function(_) => methods.push(item_id.clone()),
-                    ItemEnum::AssocType { .. } => assoc_types.push(item_id.clone()),
-                    ItemEnum::AssocConst { .. } => assoc_consts.push(item_id.clone()),
+                    ItemEnum::Function(_) => methods.push(*item_id),
+                    ItemEnum::AssocType { .. } => assoc_types.push(*item_id),
+                    ItemEnum::AssocConst { .. } => assoc_consts.push(*item_id),
                     _ => {}
                 }
             }
@@ -2084,7 +2081,7 @@ fn process_impl_details(
                 "#".repeat(heading_level + 1)
             ));
             for type_id in &assoc_types {
-                if let Some(assoc_item) = data.index.get(&type_id) {
+                if let Some(assoc_item) = data.index.get(type_id) {
                     process_item(output, assoc_item, data, level + 2);
                 }
             }
@@ -2096,7 +2093,7 @@ fn process_impl_details(
                 "#".repeat(heading_level + 1)
             ));
             for const_id in &assoc_consts {
-                if let Some(assoc_item) = data.index.get(&const_id) {
+                if let Some(assoc_item) = data.index.get(const_id) {
                     process_item(output, assoc_item, data, level + 2);
                 }
             }
@@ -2105,7 +2102,7 @@ fn process_impl_details(
         if !methods.is_empty() {
             output.push_str(&format!("{} Methods\n\n", "#".repeat(heading_level + 1)));
             for method_id in &methods {
-                if let Some(method_item) = data.index.get(&method_id) {
+                if let Some(method_item) = data.index.get(method_id) {
                     process_item(output, method_item, data, level + 2);
                 }
             }
@@ -2141,7 +2138,7 @@ fn process_impl_methods(output: &mut String, impl_id: Id, data: &Crate, _level: 
     if let Some(impl_item) = data.index.get(&impl_id) {
         if let ItemEnum::Impl(impl_) = &impl_item.inner {
             for item_id in &impl_.items {
-                if let Some(method_item) = data.index.get(&item_id) {
+                if let Some(method_item) = data.index.get(item_id) {
                     if let ItemEnum::Function(_) = &method_item.inner {
                         if let Some(_name) = &method_item.name {
                             // Format method signature
@@ -2150,7 +2147,7 @@ fn process_impl_methods(output: &mut String, impl_id: Id, data: &Crate, _level: 
 
                             // Output with proper code block formatting
                             output.push_str("- ```rust\n  ");
-                            output.push_str(&method_signature.trim());
+                            output.push_str(method_signature.trim());
                             output.push_str("\n  ```");
 
                             // Add documentation if available

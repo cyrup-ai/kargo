@@ -42,22 +42,20 @@ pub struct DependencyUpdateJob<'a> {
 
 impl<'a> DependencyUpdateJob<'a> {
     // Get a future that will execute the update job
-    pub fn execute(mut self) -> impl std::future::Future<Output = anyhow::Result<()>> + 'a {
-        async move {
-            let backup = &mut self.backup;
-            let result = self.up2date.run_impl(backup).await;
+    pub async fn execute(mut self) -> anyhow::Result<()> {
+        let backup = &mut self.backup;
+        let result = self.up2date.run_impl(backup).await;
 
-            if let Err(e) = &result {
-                if let Some(backup) = backup {
-                    self.events.publish(Event::Error {
-                        message: e.to_string(),
-                    });
-                    backup.rollback()?;
-                }
-            }
-
-            result
+        if let Err(e) = &result
+            && let Some(backup) = backup
+        {
+            self.events.publish(Event::Error {
+                message: e.to_string(),
+            });
+            backup.rollback()?;
         }
+
+        result
     }
 }
 
@@ -65,6 +63,12 @@ pub struct DependencyUpdater {
     config: Config,
     events: EventBus,
     scan_dirs: Vec<PathBuf>,
+}
+
+impl Default for DependencyUpdater {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DependencyUpdater {
@@ -114,10 +118,7 @@ impl DependencyUpdater {
     // Non-async interface that returns a domain-specific type
     pub fn run(&self) -> DependencyUpdateJob<'_> {
         let backup = if self.config.rollback_on_failure {
-            match BackupManager::new(self.events.clone()) {
-                Ok(bm) => Some(bm),
-                Err(_) => None,
-            }
+            BackupManager::new(self.events.clone()).ok()
         } else {
             None
         };
@@ -130,45 +131,43 @@ impl DependencyUpdater {
     }
 
     // Internal implementation moved to a separate type
-    fn run_impl<'a>(
+    async fn run_impl<'a>(
         &'a self,
         backup: &'a mut Option<BackupManager>,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send + 'a {
-        async move {
-            let cargo_tomls = self.find_cargo_tomls();
-            info!("Found {} Cargo.toml files", cargo_tomls.len());
+    ) -> anyhow::Result<()> {
+        let cargo_tomls = self.find_cargo_tomls();
+        info!("Found {} Cargo.toml files", cargo_tomls.len());
 
-            if let Some(backup) = backup {
-                for file_path in &cargo_tomls {
-                    backup.backup_file(file_path)?;
-                }
+        if let Some(backup) = backup {
+            for file_path in &cargo_tomls {
+                backup.backup_file(file_path)?;
             }
-
-            if self.config.vendor.enabled {
-                let vendor = VendorManager::new(
-                    self.config.vendor.path.clone(),
-                    self.config.vendor.dedupe,
-                    self.events.clone(),
-                );
-
-                let workspaces = vec![PathBuf::from("workspace/path")]; // Example paths
-                for workspace in workspaces {
-                    vendor.vendor_dependencies(&workspace).await?;
-                }
-            }
-
-            // Run post-commands
-            if !self.config.post_commands.is_empty() {
-                let runner = CommandRunner::new(self.events.clone());
-                for dir in &self.scan_dirs {
-                    if let Err(e) = runner.run_commands(&self.config.post_commands, dir).await {
-                        warn!("Post-command failed in {}: {}", dir.display(), e);
-                    }
-                }
-            }
-
-            Ok(())
         }
+
+        if self.config.vendor.enabled {
+            let vendor = VendorManager::new(
+                self.config.vendor.path.clone(),
+                self.config.vendor.dedupe,
+                self.events.clone(),
+            );
+
+            let workspaces = vec![PathBuf::from("workspace/path")]; // Example paths
+            for workspace in workspaces {
+                vendor.vendor_dependencies(&workspace).await?;
+            }
+        }
+
+        // Run post-commands
+        if !self.config.post_commands.is_empty() {
+            let runner = CommandRunner::new(self.events.clone());
+            for dir in &self.scan_dirs {
+                if let Err(e) = runner.run_commands(&self.config.post_commands, dir).await {
+                    warn!("Post-command failed in {}: {}", dir.display(), e);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn update_crate_deps(
@@ -185,9 +184,10 @@ impl DependencyUpdater {
 
             // Then process each key
             for name in keys {
-                if let Some(_) = workspace_deps
+                if workspace_deps
                     .get("workspace.dependencies")
                     .and_then(|d| d.get(&name))
+                    .is_some()
                 {
                     info!(
                         "Updating {} in {} to use workspace version",

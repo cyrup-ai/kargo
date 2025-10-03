@@ -82,7 +82,7 @@ fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.file_name().map_or(false, |f| f == "Cargo.toml") {
+        if path.file_name().is_some_and(|f| f == "Cargo.toml") {
             // Skip nested Cargo.toml files in target directories
             if !path.to_string_lossy().contains("/target/") {
                 cargo_toml_paths.push(path);
@@ -331,13 +331,13 @@ fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
         }
 
         // Add reverse dependencies (who depends on this project)
-        if let Some(dependents) = dep_usage.get(&projects[i].name) {
-            if !dependents.is_empty() {
-                projects[i].indicators.insert(
-                    "dependents".to_string(),
-                    dependents.join(","),
-                );
-            }
+        if let Some(dependents) = dep_usage.get(&projects[i].name)
+            && !dependents.is_empty()
+        {
+            projects[i].indicators.insert(
+                "dependents".to_string(),
+                dependents.join(","),
+            );
         }
 
         // Add shared dependencies this project uses

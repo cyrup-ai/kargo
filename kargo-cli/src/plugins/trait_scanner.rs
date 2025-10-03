@@ -73,19 +73,17 @@ pub struct PluginInfo {
 }
 
 fn is_native_plugin_impl(impl_item: &ItemImpl) -> bool {
-    if let Some((_, path, _)) = &impl_item.trait_ {
-        if let Some(segment) = path.segments.last() {
-            return segment.ident == "NativePlugin";
-        }
+    if let Some((_, path, _)) = &impl_item.trait_
+        && let Some(segment) = path.segments.last() {
+        return segment.ident == "NativePlugin";
     }
     false
 }
 
 fn is_plugin_command_impl(impl_item: &ItemImpl) -> bool {
-    if let Some((_, path, _)) = &impl_item.trait_ {
-        if let Some(segment) = path.segments.last() {
-            return segment.ident == "PluginCommand";
-        }
+    if let Some((_, path, _)) = &impl_item.trait_
+        && let Some(segment) = path.segments.last() {
+        return segment.ident == "PluginCommand";
     }
     false
 }

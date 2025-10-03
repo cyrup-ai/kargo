@@ -36,12 +36,33 @@ pub struct PluginMetadata {
 ///
 /// Usage:
 /// ```
+/// use kargo_plugin_api::{BoxFuture, ExecutionContext, PluginCommand};
+/// use kargo_plugin_native::kargo_plugin;
+///
+/// struct MyPlugin;
+///
+/// impl PluginCommand for MyPlugin {
+///     fn clap(&self) -> clap::Command {
+///         clap::Command::new("my-plugin")
+///             .about("My awesome plugin")
+///     }
+///
+///     fn run(&self, _ctx: ExecutionContext) -> BoxFuture {
+///         Box::pin(async move { Ok(()) })
+///     }
+/// }
+///
 /// kargo_plugin! {
 ///     name: "my-plugin",
 ///     version: "0.1.0",
 ///     description: "My awesome plugin",
 ///     author: "Me",
-///     plugin_type: MyPluginStruct
+///     plugin_type: MyPlugin
+/// }
+///
+/// #[no_mangle]
+/// pub extern "C" fn kargo_plugin_create() -> Box<dyn PluginCommand> {
+///     Box::new(MyPlugin)
 /// }
 /// ```
 #[macro_export]

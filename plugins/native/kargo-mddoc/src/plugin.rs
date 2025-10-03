@@ -113,7 +113,7 @@ impl PluginCommand for MddocPlugin {
 
             let output_dir = matches
                 .get_one::<String>("output")
-                .map(|s| PathBuf::from(s))
+                .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./docs").join(package_name));
             let temp_dir = matches.get_one::<String>("temp-dir").map(PathBuf::from);
             let keep_temp = matches.get_flag("keep-temp");

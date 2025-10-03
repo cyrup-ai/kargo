@@ -118,10 +118,10 @@ impl OutputProcessor {
             }
 
             // Apply any custom summary transformations
-            if let Some(summary_transform) = self.transformations.get("json_summary") {
-                if !summary.is_empty() {
-                    summary = format!("\n{}: {}", summary_transform, summary.trim());
-                }
+            if let Some(summary_transform) = self.transformations.get("json_summary")
+                && !summary.is_empty()
+            {
+                summary = format!("\n{}: {}", summary_transform, summary.trim());
             }
 
             if !summary.is_empty() {

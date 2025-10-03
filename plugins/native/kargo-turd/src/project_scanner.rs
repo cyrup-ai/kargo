@@ -1,0 +1,110 @@
+use anyhow::Result;
+use jwalk::WalkDir;
+use std::path::{Path, PathBuf};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
+use crate::models::Project;
+
+/// Find all Rust projects starting from root_path with visual progress feedback
+/// Returns Vec of Project with collected src and test files
+pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
+    // Spinner for Cargo.toml discovery phase
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .map_err(|e| anyhow::anyhow!("Failed to set progress style: {}", e))?
+    );
+    pb.set_message("Scanning for Cargo.toml files...");
+    pb.enable_steady_tick(Duration::from_millis(100));
+
+    let cargo_toml_paths = find_cargo_toml_files(root_path)?;
+
+    pb.finish_with_message(format!("Found {} project(s)", cargo_toml_paths.len()));
+
+    // Collect .rs files for each project
+    let mut projects = Vec::new();
+    for cargo_path in cargo_toml_paths {
+        let mut project = Project::new(cargo_path.clone())?;
+        collect_rust_files(&cargo_path, &mut project)?;
+        projects.push(project);
+    }
+
+    Ok(projects)
+}
+
+/// Find all Rust projects starting from root_path
+/// Returns Vec of Project with collected src and test files
+pub fn find_projects(root_path: &Path) -> Result<Vec<Project>> {
+    let cargo_toml_paths = find_cargo_toml_files(root_path)?;
+
+    let mut projects = Vec::new();
+    for cargo_path in cargo_toml_paths {
+        let mut project = Project::new(cargo_path.clone())?;
+        collect_rust_files(&cargo_path, &mut project)?;
+        projects.push(project);
+    }
+
+    Ok(projects)
+}
+
+/// Parallel directory traversal to find all Cargo.toml files
+/// Uses jwalk with rayon for parallel scanning across all CPU cores
+fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
+    let mut cargo_toml_paths = Vec::new();
+
+    for entry in WalkDir::new(root_path)
+        .follow_links(true)  // IMPORTANT: Follow symlinks
+        .parallelism(jwalk::Parallelism::RayonNewPool(0))  // 0 = use all CPU cores
+        .into_iter()
+        .filter_map(|e| e.ok())  // Skip permission denied errors
+    {
+        let path = entry.path();
+        if path.file_name().is_some_and(|f| f == "Cargo.toml") {
+            // Skip output and build directories
+            let path_str = path.to_string_lossy();
+            if !path_str.contains("/target/") && !path_str.contains("/task/") {
+                cargo_toml_paths.push(path);
+            }
+        }
+    }
+
+    Ok(cargo_toml_paths)
+}
+
+/// Collect all .rs files from src/ and tests/ directories
+fn collect_rust_files(cargo_toml: &Path, project: &mut Project) -> Result<()> {
+    let project_dir = cargo_toml.parent()
+        .ok_or_else(|| anyhow::anyhow!("Cargo.toml has no parent directory"))?;
+
+    // Collect src files (if directory exists)
+    let src_dir = project_dir.join("src");
+    if src_dir.exists() && src_dir.is_dir() {
+        project.src_files = collect_rs_files(&src_dir)?;
+    }
+
+    // Collect test files (if directory exists)
+    let tests_dir = project_dir.join("tests");
+    if tests_dir.exists() && tests_dir.is_dir() {
+        project.test_files = collect_rs_files(&tests_dir)?;
+    }
+
+    Ok(())
+}
+
+/// Recursively collect all .rs files in a directory
+fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+
+    Ok(files)
+}

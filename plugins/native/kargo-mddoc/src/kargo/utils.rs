@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// Create a directory and all parent directories
 pub fn create_dir_all(path: &Path) -> Result<(), Error> {
     debug!("Creating directory: {}", path.display());
-    fs::create_dir_all(path).map_err(|e| Error::Io(e))
+    fs::create_dir_all(path).map_err(Error::Io)
 }
 
 /// Find files matching a pattern in a directory
@@ -23,10 +23,10 @@ pub fn find_files(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>, Error> {
         return Ok(result);
     }
 
-    let entries = fs::read_dir(dir).map_err(|e| Error::Io(e))?;
+    let entries = fs::read_dir(dir).map_err(Error::Io)?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| Error::Io(e))?;
+        let entry = entry.map_err(Error::Io)?;
         let path = entry.path();
 
         if path.is_dir() {
@@ -74,11 +74,11 @@ pub fn write_file(path: &Path, content: &str) -> Result<(), Error> {
         create_dir_all(parent)?;
     }
 
-    fs::write(path, content).map_err(|e| Error::Io(e))
+    fs::write(path, content).map_err(Error::Io)
 }
 
 /// Read a file to string with proper error handling
 pub fn read_file(path: &Path) -> Result<String, Error> {
     debug!("Reading file: {}", path.display());
-    fs::read_to_string(path).map_err(|e| Error::Io(e))
+    fs::read_to_string(path).map_err(Error::Io)
 }

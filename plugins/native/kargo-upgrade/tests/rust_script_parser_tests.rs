@@ -1,5 +1,5 @@
 use kargo_upgrade::models::{DependencyParser, DependencySource};
-use kargo_upgrade::parsers::rust_script_parser::RustScriptParser;
+use kargo_upgrade::parsers::RustScriptParser;
 
 #[test]
 fn test_parse_cargo_section() {
@@ -18,7 +18,9 @@ fn main() {
 
     let source = DependencySource::from_content(content.to_string());
     let parser = RustScriptParser;
-    let deps = parser.parse(&source).expect("Failed to parse dependencies");
+    let deps = parser
+        .parse(&source)
+        .expect("TEST FAILURE: Failed to parse dependencies from cargo section");
 
     assert_eq!(deps.len(), 2);
     assert_eq!(deps[0].name, "anyhow");
@@ -40,7 +42,9 @@ fn main() {
 
     let source = DependencySource::from_content(content.to_string());
     let parser = RustScriptParser;
-    let deps = parser.parse(&source).expect("Failed to parse dependencies");
+    let deps = parser
+        .parse(&source)
+        .expect("TEST FAILURE: Failed to parse dependencies from cargo-deps line");
 
     assert_eq!(deps.len(), 3);
     assert_eq!(deps[0].name, "anyhow");

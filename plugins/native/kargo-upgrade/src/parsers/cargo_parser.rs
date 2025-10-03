@@ -20,51 +20,49 @@ impl DependencyParser for CargoParser {
                 let mut dependencies = Vec::new();
 
                 // Parse regular dependencies
-                if let Some(deps) = document.get("dependencies") {
-                    if let Some(deps_table) = deps.as_table() {
-                        self.parse_dependencies_table(
-                            deps_table,
-                            &mut dependencies,
-                            DependencyLocation::CargoTomlDirect,
-                        )?;
-                    }
+                if let Some(deps) = document.get("dependencies")
+                    && let Some(deps_table) = deps.as_table()
+                {
+                    self.parse_dependencies_table(
+                        deps_table,
+                        &mut dependencies,
+                        DependencyLocation::CargoTomlDirect,
+                    )?;
                 }
 
                 // Parse dev-dependencies
-                if let Some(deps) = document.get("dev-dependencies") {
-                    if let Some(deps_table) = deps.as_table() {
-                        self.parse_dependencies_table(
-                            deps_table,
-                            &mut dependencies,
-                            DependencyLocation::CargoTomlDev,
-                        )?;
-                    }
+                if let Some(deps) = document.get("dev-dependencies")
+                    && let Some(deps_table) = deps.as_table()
+                {
+                    self.parse_dependencies_table(
+                        deps_table,
+                        &mut dependencies,
+                        DependencyLocation::CargoTomlDev,
+                    )?;
                 }
 
                 // Parse build-dependencies
-                if let Some(deps) = document.get("build-dependencies") {
-                    if let Some(deps_table) = deps.as_table() {
-                        self.parse_dependencies_table(
-                            deps_table,
-                            &mut dependencies,
-                            DependencyLocation::CargoTomlBuild,
-                        )?;
-                    }
+                if let Some(deps) = document.get("build-dependencies")
+                    && let Some(deps_table) = deps.as_table()
+                {
+                    self.parse_dependencies_table(
+                        deps_table,
+                        &mut dependencies,
+                        DependencyLocation::CargoTomlBuild,
+                    )?;
                 }
 
                 // Handle workspace dependencies if present
-                if let Some(workspace) = document.get("workspace") {
-                    if let Some(workspace_table) = workspace.as_table() {
-                        if let Some(deps) = workspace_table.get("dependencies") {
-                            if let Some(deps_table) = deps.as_table() {
-                                self.parse_dependencies_table(
-                                    deps_table,
-                                    &mut dependencies,
-                                    DependencyLocation::CargoTomlDirect,
-                                )?;
-                            }
-                        }
-                    }
+                if let Some(workspace) = document.get("workspace")
+                    && let Some(workspace_table) = workspace.as_table()
+                    && let Some(deps) = workspace_table.get("dependencies")
+                    && let Some(deps_table) = deps.as_table()
+                {
+                    self.parse_dependencies_table(
+                        deps_table,
+                        &mut dependencies,
+                        DependencyLocation::CargoTomlDirect,
+                    )?;
                 }
 
                 Ok(dependencies)
@@ -103,28 +101,41 @@ impl CargoParser {
     /// Extract the version from a dependency item
     fn extract_version(&self, item: &Item) -> Option<String> {
         match item {
-            // Simple string version like version = "1.0.0"
+            // Simple string version like: anyhow = "1.0.0"
             Item::Value(value) => {
                 if let Some(version) = value.as_str() {
-                    Some(version.to_string())
-                } else {
-                    None
+                    return Some(version.to_string());
                 }
+
+                if let Some(inline_table) = value.as_inline_table() {
+                    // Handle inline table: tokio = { version = "1.0.0", features = [...] }
+                    // Skip workspace dependencies
+                    if inline_table.contains_key("workspace") {
+                        return None;
+                    }
+
+                    // Extract version from inline table
+                    if let Some(version) = inline_table.get("version")
+                        && let Some(version_str) = version.as_str()
+                    {
+                        return Some(version_str.to_string());
+                    }
+                }
+
+                None
             }
 
-            // Table specification like { version = "1.0.0", features = ["..."] }
+            // Table specification like [dependencies.tokio] with version = "1.0.0"
             Item::Table(table) => {
                 // Skip workspace dependencies
                 if table.contains_key("workspace") {
                     return None;
                 }
 
-                if let Some(version) = table.get("version") {
-                    if let Some(version_str) = version.as_str() {
-                        Some(version_str.to_string())
-                    } else {
-                        None
-                    }
+                if let Some(version) = table.get("version")
+                    && let Some(version_str) = version.as_str()
+                {
+                    Some(version_str.to_string())
                 } else {
                     None
                 }

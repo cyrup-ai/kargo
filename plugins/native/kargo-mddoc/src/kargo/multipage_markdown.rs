@@ -47,7 +47,7 @@ impl MultipageGenerator {
         info!("Generating multi-page markdown documentation");
 
         // Ensure output directory exists
-        std::fs::create_dir_all(&self.config.output_dir).map_err(|e| Error::Io(e))?;
+        std::fs::create_dir_all(&self.config.output_dir).map_err(Error::Io)?;
 
         let mut generated_files = Vec::new();
 
@@ -585,7 +585,7 @@ pub fn convert_to_multipage_markdown(
 
     // Load the JSON data
     let json_content = utils::read_file(json_path)?;
-    let data: Crate = serde_json::from_str(&json_content).map_err(|e| Error::JsonParse(e))?;
+    let data: Crate = serde_json::from_str(&json_content).map_err(Error::JsonParse)?;
 
     // Generate multi-page markdown
     let mut generator = MultipageGenerator::new(data, config);

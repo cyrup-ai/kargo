@@ -21,7 +21,7 @@ pub fn find_cargo_toml_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.file_name().map_or(false, |f| f == "Cargo.toml") {
+        if path.file_name().is_some_and(|f| f == "Cargo.toml") {
             // Skip nested Cargo.toml files in target directories
             if !path.to_string_lossy().contains("/target/") {
                 cargo_toml_paths.push(path);
@@ -51,7 +51,7 @@ pub fn find_rust_script_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "rs") {
+        if path.extension().is_some_and(|ext| ext == "rs") {
             // Skip files in target directories
             if !path.to_string_lossy().contains("/target/") {
                 // Check if it's a rust-script with cargo dependencies

@@ -1,0 +1,65 @@
+[package]
+name = "kargo-turd"
+version.workspace = true
+edition = "2024"
+authors.workspace = true
+description = "Find stubbed, incomplete, and non-production quality code in Rust projects"
+keywords = ["linting", "code-quality", "static-analysis", "rust"]
+categories = ["development-tools"]
+
+[dependencies]
+# Plugin API
+kargo-plugin-api = { workspace = true }
+
+# CLI and progress
+clap = { workspace = true, features = ["derive"] }
+indicatif = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["fs", "rt", "macros"] }
+
+# File walking and parallel processing
+jwalk = { workspace = true }
+rayon = { workspace = true }
+
+# Pattern matching
+regex = { workspace = true }
+lazy_static = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# AST parsing for Rust code analysis
+syn = { version = "2", features = ["full", "visit", "extra-traits"] }
+quote = { workspace = true }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+
+# Template rendering for task file generation
+minijinja = { version = "2", features = ["loader"] }
+chrono = "0.4"
+
+# File hashing for unique task file names
+sha2 = "0.10"
+
+# TOML parsing for Cargo.toml analysis
+toml = "0.8"
+
+# Watch mode - file system monitoring (TURD_10)
+watchexec = "8.0.1"
+watchexec-events = "6.0.0"
+watchexec-signals = "5.0.0"
+miette = "7.2.0"
+
+[lib]
+name = "kargo_turd"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]

@@ -23,18 +23,23 @@ impl WasmPlugin for {{plugin_name | pascal_case}}Plugin {
                 // TODO: Add more arguments as needed
             ],
         };
-        serde_json::to_string(&cmd).unwrap()
+        serde_json::to_string(&cmd).unwrap_or_else(|e| {
+            format!(r#"{{"error": "Failed to serialize command definition: {}"}}"#, e)
+        })
     }
     
     fn execute(args_json: String) -> String {
         let args: Value = match serde_json::from_str(&args_json) {
             Ok(v) => v,
             Err(e) => {
-                return serde_json::to_string(&ExecutionResult {
+                let result = ExecutionResult {
                     success: false,
                     output: None,
                     error: Some(format!("Failed to parse arguments: {}", e)),
-                }).unwrap();
+                };
+                return serde_json::to_string(&result).unwrap_or_else(|serialize_err| {
+                    format!(r#"{{"success": false, "error": "Serialization failed: {}"}}"#, serialize_err)
+                });
             }
         };
         
@@ -46,8 +51,10 @@ impl WasmPlugin for {{plugin_name | pascal_case}}Plugin {
             output: Some(output),
             error: None,
         };
-        
-        serde_json::to_string(&result).unwrap()
+
+        serde_json::to_string(&result).unwrap_or_else(|e| {
+            format!(r#"{{"success": false, "error": "Failed to serialize result: {}"}}"#, e)
+        })
     }
     
     fn get_metadata() -> String {
@@ -58,7 +65,9 @@ impl WasmPlugin for {{plugin_name | pascal_case}}Plugin {
             author: "{{author_name}}".to_string(),
             language: "rust".to_string(),
         };
-        serde_json::to_string(&metadata).unwrap()
+        serde_json::to_string(&metadata).unwrap_or_else(|e| {
+            format!(r#"{{"error": "Failed to serialize metadata: {}"}}"#, e)
+        })
     }
 }
 

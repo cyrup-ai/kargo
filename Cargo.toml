@@ -11,6 +11,7 @@ members = [
     "plugins/native/kargo-mddoc",
     "plugins/native/kargo-mdlint",
     "plugins/native/kargo-sap",
+    "plugins/native/kargo-turd",
     "plugins/native/kargo-upgrade",
     "plugins/native/kargo-walk"
 ]

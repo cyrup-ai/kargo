@@ -21,13 +21,19 @@ pub struct PluginManager {
     _native_libs: Vec<Arc<Library>>, // keep libs alive
 }
 
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginManager {
     pub fn new() -> Self {
         // 1) optional env override
         use std::env;
-        let mut sp = env::var_os("KARGO_PLUGIN_PATH")
+        let mut sp: Vec<PathBuf> = env::var_os("KARGO_PLUGIN_PATH")
             .map(|v| env::split_paths(&v).collect())
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_default();
 
         // 2) Auto-discover workspace siblings
         if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
@@ -45,11 +51,10 @@ impl PluginManager {
                     if let Ok(entries) = fs::read_dir(&native_plugins_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
-                            if path.is_dir() && path.join("Cargo.toml").exists() {
-                                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                    info!("Discovered native plugin candidate: {}", name);
-                                    sp.push(path);
-                                }
+                            if path.is_dir() && path.join("Cargo.toml").exists()
+                                && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                info!("Discovered native plugin candidate: {}", name);
+                                sp.push(path);
                             }
                         }
                     }
@@ -57,8 +62,8 @@ impl PluginManager {
 
                 // Look for plugins in plugins/wasm directory
                 let wasm_plugins_dir = root.join("plugins").join("wasm");
-                if wasm_plugins_dir.is_dir() {
-                    if let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
+                if wasm_plugins_dir.is_dir()
+                    && let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
@@ -66,21 +71,19 @@ impl PluginManager {
                                     info!("Discovered WASM plugin candidate: {}", name);
                                     sp.push(path);
                                 }
-                            } else if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
-                                if let Some(parent) = path.parent() {
-                                    if let Some(name) = parent.file_name().and_then(|n| n.to_str())
-                                    {
-                                        info!(
-                                            "Discovered standalone WASM module for plugin: {}",
-                                            name
-                                        );
-                                    }
-                                    sp.push(parent.to_path_buf());
+                            } else if path.extension().and_then(|e| e.to_str()) == Some("wasm")
+                                && let Some(parent) = path.parent() {
+                                if let Some(name) = parent.file_name().and_then(|n| n.to_str())
+                                {
+                                    info!(
+                                        "Discovered standalone WASM module for plugin: {}",
+                                        name
+                                    );
                                 }
+                                sp.push(parent.to_path_buf());
                             }
                         }
                     }
-                }
             }
         } else {
             // Try compile-time workspace root
@@ -90,8 +93,8 @@ impl PluginManager {
 
                 // Look for plugins in plugins/native directory
                 let native_plugins_dir = workspace_path.join("plugins").join("native");
-                if native_plugins_dir.is_dir() {
-                    if let Ok(entries) = fs::read_dir(&native_plugins_dir) {
+                if native_plugins_dir.is_dir()
+                    && let Ok(entries) = fs::read_dir(&native_plugins_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
@@ -99,12 +102,11 @@ impl PluginManager {
                             }
                         }
                     }
-                }
 
                 // Look for plugins in plugins/wasm directory
                 let wasm_plugins_dir = workspace_path.join("plugins").join("wasm");
-                if wasm_plugins_dir.is_dir() {
-                    if let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
+                if wasm_plugins_dir.is_dir()
+                    && let Ok(entries) = fs::read_dir(&wasm_plugins_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
@@ -112,8 +114,6 @@ impl PluginManager {
                             }
                         }
                     }
-                }
-            } else {
             }
         }
 
@@ -139,7 +139,7 @@ impl PluginManager {
 
             // Check if this directory itself is a plugin (for workspace siblings)
             if d.join("Cargo.toml").is_file() {
-                match self.build_and_load_rust_project(&d) {
+                match self.build_and_load_rust_project(d) {
                     Ok(_) => info!("Successfully loaded plugin from {}", d.display()),
                     Err(e) => info!("Failed to load plugin from {}: {}", d.display(), e),
                 }
@@ -170,15 +170,15 @@ impl PluginManager {
             }
         }
 
-        for (name, _) in &self.plugins {
+        for name in self.plugins.keys() {
             info!("Loaded plugin: {}", name);
         }
 
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Option<&Box<dyn PluginCommand>> {
-        self.plugins.get(name)
+    pub fn get(&self, name: &str) -> Option<&dyn PluginCommand> {
+        self.plugins.get(name).map(|boxed| &**boxed)
     }
 
     pub fn plugins_iter(&self) -> impl Iterator<Item = (&String, &Box<dyn PluginCommand>)> {
@@ -197,8 +197,7 @@ impl PluginManager {
                 Some(ref art) => {
                     let src_max = fs::read_dir(dir)?
                         .filter_map(|e| e.ok())
-                        .map(|e| e.metadata().and_then(|m| m.modified()))
-                        .flatten()
+                        .flat_map(|e| e.metadata().and_then(|m| m.modified()))
                         .max();
                     let art_mod = fs::metadata(art).and_then(|m| m.modified()).ok();
                     match src_max.zip(art_mod) {

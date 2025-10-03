@@ -59,7 +59,7 @@ pub enum ItemEnum {
     #[serde(rename = "trait_alias")]
     TraitAlias(TraitAlias),
     #[serde(rename = "impl")]
-    Impl(Impl),
+    Impl(Box<Impl>),
     #[serde(rename = "type_alias")]
     TypeAlias(TypeAlias),
     #[serde(rename = "function")]

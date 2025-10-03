@@ -1,33 +1,29 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use toml_edit::DocumentMut as Document;
 
 use crate::models::{Dependency, DependencyLocation, DependencyParser, DependencySource};
 
 // Regular expressions for parsing rust-script files
-static CARGO_SECTION_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"```cargo\n([\s\S]*?)```").expect("Invalid cargo section regex"));
-static CARGO_DEPS_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"//\s*cargo-deps:\s*(.+)$").expect("Invalid cargo deps regex"));
-static DEPS_SECTION_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?s)\[dependencies\](.*?)(?:\n\s*\[|\z)").expect("Invalid deps section regex")
+// These patterns are hardcoded and valid, so unwrap is safe during initialization
+// Regex to find embedded cargo TOML sections
+// Supports both: //! ```cargo format and standalone ```cargo format
+static CARGO_SECTION_DOC_COMMENT_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"//!\s*```cargo\s*\n((?://!.*\n)*?)//!\s*```")
+        .expect("BUG: hardcoded cargo doc comment section regex pattern is invalid")
 });
-static SIMPLE_DEP_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?m)^(\w+)\s*=\s*["']([^"']+)["']"#).expect("Invalid simple dep regex")
+
+static CARGO_SECTION_STANDALONE_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"```cargo\s*\n((?:.*\n)*?)```")
+        .expect("BUG: hardcoded cargo standalone section regex pattern is invalid")
 });
-static TABLE_DEP_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?ms)^(\w+)\s*=\s*\{(.*?)version\s*=\s*["']([^"']+)["']"#)
-        .expect("Invalid table dep regex")
+
+// Regex to find cargo-deps inline format
+static CARGO_DEPS_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?m)//\s*cargo-deps:\s*(.+)$")
+        .expect("BUG: hardcoded cargo deps regex pattern is invalid")
 });
-static DEPS_WITH_VERSION_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(\w+)\s*=\s*["']([^"']+)["']"#).expect("Invalid deps with version regex")
-});
-static CARGO_DEPS_FORMAT_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(\w+)=["']([^"']+)["']"#).expect("Invalid cargo deps format regex"));
-static DEBUG_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"([\w-]+)=?["']?([^,"']+)["']?"#).expect("Invalid debug regex"));
-static BARE_DEPS_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?:^|,)\s*(\w+)(?:\s*,|$)").expect("Invalid bare deps regex"));
 
 /// Parser for Rust script files
 #[derive(Clone)]
@@ -39,10 +35,10 @@ impl DependencyParser for RustScriptParser {
         let mut dependencies = Vec::new();
 
         // Parse embedded cargo manifest sections
-        self.parse_cargo_sections(&content, &mut dependencies, source)?;
+        self.parse_cargo_sections(content, &mut dependencies, source)?;
 
         // Parse single-line cargo-deps format
-        self.parse_cargo_deps_line(&content, &mut dependencies, source)?;
+        self.parse_cargo_deps_line(content, &mut dependencies, source)?;
 
         Ok(dependencies)
     }
@@ -55,60 +51,96 @@ impl RustScriptParser {
         dependencies: &mut Vec<Dependency>,
         _source: &DependencySource,
     ) -> Result<()> {
-        for captures in CARGO_SECTION_REGEX.captures_iter(content) {
+        // Parse doc comment format: //! ```cargo
+        for captures in CARGO_SECTION_DOC_COMMENT_REGEX.captures_iter(content) {
             if let Some(cargo_content) = captures.get(1) {
-                let cargo_content_str = cargo_content.as_str();
+                let section_start = cargo_content.start();
+                let section_end = cargo_content.end();
 
-                // Look for dependencies section
-                if let Some(deps_section) = DEPS_SECTION_REGEX.captures(cargo_content_str) {
-                    let deps_content = deps_section
-                        .get(1)
-                        .ok_or_else(|| anyhow::anyhow!("Failed to get deps content"))?
-                        .as_str();
+                // Strip //! prefixes from each line to get clean TOML
+                let toml_content: String = cargo_content.as_str()
+                    .lines()
+                    .map(|line| line.trim_start_matches("//!").trim_start())
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
-                    // Parse simple dependencies: name = "version"
-                    for cap in SIMPLE_DEP_REGEX.captures_iter(deps_content) {
-                        let name = cap
-                            .get(1)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                            .as_str();
-                        let version = cap
-                            .get(2)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
-                            .as_str();
+                self.parse_toml_dependencies(&toml_content, section_start, section_end, dependencies)?;
+            }
+        }
 
-                        dependencies.push(Dependency {
-                            name: name.to_string(),
-                            version: version.to_string(),
-                            location: DependencyLocation::RustScriptCargo {
-                                section_range: (cargo_content.start(), cargo_content.end()),
-                            },
-                        });
-                    }
+        // Parse standalone format: ```cargo (no comment prefix)
+        for captures in CARGO_SECTION_STANDALONE_REGEX.captures_iter(content) {
+            if let Some(cargo_content) = captures.get(1) {
+                let section_start = cargo_content.start();
+                let section_end = cargo_content.end();
+                let toml_content = cargo_content.as_str();
 
-                    // Parse table-style dependencies: name = { version = "version", ... }
-                    for cap in TABLE_DEP_REGEX.captures_iter(deps_content) {
-                        let name = cap
-                            .get(1)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                            .as_str();
-                        let version = cap
-                            .get(3)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
-                            .as_str();
+                self.parse_toml_dependencies(toml_content, section_start, section_end, dependencies)?;
+            }
+        }
 
-                        dependencies.push(Dependency {
-                            name: name.to_string(),
-                            version: version.to_string(),
-                            location: DependencyLocation::RustScriptCargo {
-                                section_range: (cargo_content.start(), cargo_content.end()),
-                            },
-                        });
-                    }
+        Ok(())
+    }
+
+    /// Parse TOML content and extract dependencies
+    fn parse_toml_dependencies(
+        &self,
+        toml_content: &str,
+        section_start: usize,
+        section_end: usize,
+        dependencies: &mut Vec<Dependency>,
+    ) -> Result<()> {
+        // Parse as TOML document
+        let document = toml_content
+            .parse::<Document>()
+            .map_err(|e| anyhow!("Failed to parse embedded Cargo.toml: {}", e))?;
+
+        // Extract dependencies table
+        if let Some(deps_item) = document.get("dependencies")
+            && let Some(deps_table) = deps_item.as_table()
+        {
+            for (name, value) in deps_table.iter() {
+                if let Some(version) = self.extract_version(value) {
+                    dependencies.push(Dependency {
+                        name: name.to_string(),
+                        version,
+                        location: DependencyLocation::RustScriptCargo {
+                            section_range: (section_start, section_end),
+                        },
+                    });
                 }
             }
         }
+
         Ok(())
+    }
+
+    /// Extract version from a TOML value (reused logic from CargoParser)
+    fn extract_version(&self, value: &toml_edit::Item) -> Option<String> {
+        match value {
+            toml_edit::Item::Value(toml_edit::Value::String(s)) => {
+                Some(s.value().to_string())
+            }
+            toml_edit::Item::Value(toml_edit::Value::InlineTable(table)) => {
+                table.get("version").and_then(|v| {
+                    if let toml_edit::Value::String(s) = v {
+                        Some(s.value().to_string())
+                    } else {
+                        None
+                    }
+                })
+            }
+            toml_edit::Item::Table(table) => {
+                table.get("version").and_then(|v| {
+                    if let toml_edit::Item::Value(toml_edit::Value::String(s)) = v {
+                        Some(s.value().to_string())
+                    } else {
+                        None
+                    }
+                })
+            }
+            _ => None,
+        }
     }
 
     fn parse_cargo_deps_line(
@@ -122,108 +154,49 @@ impl RustScriptParser {
                 let deps_str = deps_match.as_str();
                 let line_start = captures
                     .get(0)
-                    .ok_or_else(|| anyhow::anyhow!("Failed to get match start"))?
+                    .ok_or_else(|| anyhow!("Failed to get match start"))?
                     .start();
                 let line_end = captures
                     .get(0)
-                    .ok_or_else(|| anyhow::anyhow!("Failed to get match end"))?
+                    .ok_or_else(|| anyhow!("Failed to get match end"))?
                     .end();
 
-                // Track which dependencies have version info
-                let mut deps_with_version = Vec::new();
-
-                // Try parsing: name = "version" format
-                for cap in DEPS_WITH_VERSION_REGEX.captures_iter(deps_str) {
-                    let name = cap
-                        .get(1)
-                        .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                        .as_str();
-
-                    if !deps_with_version.iter().any(|d: &String| d == name) {
-                        let version = cap
-                            .get(2)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
-                            .as_str();
-                        deps_with_version.push(name.to_string());
-
-                        dependencies.push(Dependency {
-                            name: name.to_string(),
-                            version: version.to_string(),
-                            location: DependencyLocation::RustScriptDeps {
-                                line_range: (line_start, line_end),
-                            },
-                        });
-                    }
-                }
-
-                // Try parsing: name="version" format (no spaces)
-                for cap in CARGO_DEPS_FORMAT_REGEX.captures_iter(deps_str) {
-                    let name = cap
-                        .get(1)
-                        .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                        .as_str();
-
-                    if !deps_with_version.iter().any(|d: &String| d == name) {
-                        let version = cap
-                            .get(2)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
-                            .as_str();
-                        deps_with_version.push(name.to_string());
-
-                        dependencies.push(Dependency {
-                            name: name.to_string(),
-                            version: version.to_string(),
-                            location: DependencyLocation::RustScriptDeps {
-                                line_range: (line_start, line_end),
-                            },
-                        });
-                    }
-                }
-
-                // More relaxed parsing for edge cases
-                for cap in DEBUG_REGEX.captures_iter(deps_str) {
-                    let name = cap
-                        .get(1)
-                        .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                        .as_str();
-
-                    if !deps_with_version.iter().any(|d: &String| d == name) && cap.get(2).is_some()
-                    {
-                        let version = cap
-                            .get(2)
-                            .ok_or_else(|| anyhow::anyhow!("Failed to get dependency version"))?
-                            .as_str();
-                        deps_with_version.push(name.to_string());
-
-                        dependencies.push(Dependency {
-                            name: name.to_string(),
-                            version: version.to_string(),
-                            location: DependencyLocation::RustScriptDeps {
-                                line_range: (line_start, line_end),
-                            },
-                        });
-                    }
-                }
-
-                // Parse bare dependency names (no version specified)
-                for cap in BARE_DEPS_REGEX.captures_iter(deps_str) {
-                    let name = cap
-                        .get(1)
-                        .ok_or_else(|| anyhow::anyhow!("Failed to get dependency name"))?
-                        .as_str();
-
-                    // Skip if we already found this with a version
-                    if deps_with_version.iter().any(|d| d == name) {
+                // Parse comma-separated dependencies
+                // Format: anyhow="1.0", tokio="1.0", serde
+                for dep_item in deps_str.split(',') {
+                    let dep_item = dep_item.trim();
+                    if dep_item.is_empty() {
                         continue;
                     }
 
-                    dependencies.push(Dependency {
-                        name: name.to_string(),
-                        version: "*".to_string(),
-                        location: DependencyLocation::RustScriptDeps {
-                            line_range: (line_start, line_end),
-                        },
-                    });
+                    // Check for name="version" or name = "version" format
+                    if let Some(eq_pos) = dep_item.find('=') {
+                        let name = dep_item[..eq_pos].trim();
+                        let version_part = dep_item[eq_pos + 1..].trim();
+
+                        // Extract version from quotes
+                        let version = version_part
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
+
+                        dependencies.push(Dependency {
+                            name: name.to_string(),
+                            version,
+                            location: DependencyLocation::RustScriptDeps {
+                                line_range: (line_start, line_end),
+                            },
+                        });
+                    } else {
+                        // Bare dependency name without version
+                        dependencies.push(Dependency {
+                            name: dep_item.to_string(),
+                            version: "*".to_string(),
+                            location: DependencyLocation::RustScriptDeps {
+                                line_range: (line_start, line_end),
+                            },
+                        });
+                    }
                 }
             }
         }

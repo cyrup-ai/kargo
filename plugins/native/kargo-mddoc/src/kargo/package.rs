@@ -64,7 +64,7 @@ impl PackageSpec {
         // They cannot start with a digit, - or _
         lazy_static::lazy_static! {
             static ref CRATE_NAME_RE: Regex = Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
-                .expect("Invalid regex for crate name validation");
+                .expect("BUG: hardcoded crate name validation regex pattern is invalid");
         }
         CRATE_NAME_RE.is_match(name)
     }

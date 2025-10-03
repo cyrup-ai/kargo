@@ -95,6 +95,12 @@ pub struct CargoSection {
 
 pub struct ProjectAnalyzer;
 
+impl Default for ProjectAnalyzer {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl ProjectAnalyzer {
     /// Create a new project analyzer
     pub fn new() -> Self {
@@ -106,14 +112,14 @@ impl ProjectAnalyzer {
         let path = path.as_ref();
 
         // First, check if this is a rust script
-        if path.extension().map_or(false, |ext| ext == "rs") {
-            if let Ok(true) = self.is_rust_script(path).await {
-                return self.analyze_rust_script(path).await;
-            }
+        if path.extension().is_some_and(|ext| ext == "rs")
+            && let Ok(true) = self.is_rust_script(path).await
+        {
+            return self.analyze_rust_script(path).await;
         }
 
         // Check if this is a Cargo.toml file
-        let cargo_path = if path.file_name().map_or(false, |name| name == "Cargo.toml") {
+        let cargo_path = if path.file_name().is_some_and(|name| name == "Cargo.toml") {
             path.to_path_buf()
         } else {
             path.join("Cargo.toml")
@@ -133,7 +139,7 @@ impl ProjectAnalyzer {
         }
 
         // Check file extension
-        if path.extension().map_or(true, |ext| ext != "rs") {
+        if path.extension().is_none_or(|ext| ext != "rs") {
             return Ok(false);
         }
 
@@ -176,15 +182,14 @@ impl ProjectAnalyzer {
                     });
 
                     // Try to parse as TOML to extract dependencies
-                    if let Ok(doc) = cargo_content.parse::<DocumentMut>() {
-                        if let Some(deps) = doc.get("dependencies") {
-                            if let Some(deps_table) = deps.as_table() {
-                                for (key, value) in deps_table.iter() {
-                                    let version = extract_version_from_toml(value);
-                                    if let Some(version) = version {
-                                        dependencies.insert(key.to_string(), version);
-                                    }
-                                }
+                    if let Ok(doc) = cargo_content.parse::<DocumentMut>()
+                        && let Some(deps) = doc.get("dependencies")
+                        && let Some(deps_table) = deps.as_table()
+                    {
+                        for (key, value) in deps_table.iter() {
+                            let version = extract_version_from_toml(value);
+                            if let Some(version) = version {
+                                dependencies.insert(key.to_string(), version);
                             }
                         }
                     }
@@ -212,10 +217,10 @@ impl ProjectAnalyzer {
         // Determine the project type and configuration
         let is_binary = path
             .parent()
-            .map_or(false, |parent| parent.join("src/main.rs").exists());
+            .is_some_and(|parent| parent.join("src/main.rs").exists());
         let is_library = path
             .parent()
-            .map_or(false, |parent| parent.join("src/lib.rs").exists());
+            .is_some_and(|parent| parent.join("src/lib.rs").exists());
         let is_proc_macro = document
             .get("lib")
             .and_then(|lib| lib.get("proc-macro"))
@@ -231,7 +236,7 @@ impl ProjectAnalyzer {
 
         let has_build_script = path
             .parent()
-            .map_or(false, |parent| parent.join("build.rs").exists());
+            .is_some_and(|parent| parent.join("build.rs").exists());
 
         // Check if this is a workspace member
         let workspace_info = self.extract_workspace_info(path, &document).await;
@@ -344,11 +349,10 @@ impl ProjectAnalyzer {
             None => Vec::new(),
         };
 
-        let default_members = match workspace
+        let default_members = workspace
             .get("default-members")
             .and_then(|members| members.as_array())
-        {
-            Some(members) => Some(
+            .map(|members| {
                 members
                     .iter()
                     .filter_map(|m| m.as_str())
@@ -359,16 +363,13 @@ impl ProjectAnalyzer {
                             parent_dir.join(m)
                         }
                     })
-                    .collect::<Vec<_>>(),
-            ),
-            None => None,
-        };
+                    .collect::<Vec<_>>()
+            });
 
-        let exclude = match workspace
+        let exclude = workspace
             .get("exclude")
             .and_then(|members| members.as_array())
-        {
-            Some(members) => Some(
+            .map(|members| {
                 members
                     .iter()
                     .filter_map(|m| m.as_str())
@@ -379,10 +380,8 @@ impl ProjectAnalyzer {
                             parent_dir.join(m)
                         }
                     })
-                    .collect::<Vec<_>>(),
-            ),
-            None => None,
-        };
+                    .collect::<Vec<_>>()
+            });
 
         // Check for package section to determine if it's a virtual workspace
         let is_virtual = document.get("package").is_none();
@@ -416,11 +415,11 @@ impl ProjectAnalyzer {
         let mut dependency_inheritance = HashMap::new();
         let workspace_dependencies = workspace.get("dependencies");
 
-        if let Some(deps) = workspace_dependencies {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, _) in deps_table.iter() {
-                    dependency_inheritance.insert(key.to_string(), true);
-                }
+        if let Some(deps) = workspace_dependencies
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, _) in deps_table.iter() {
+                dependency_inheritance.insert(key.to_string(), true);
             }
         }
 
@@ -463,14 +462,12 @@ impl ProjectAnalyzer {
                 let potential_workspace = current.join("Cargo.toml");
 
                 // Check if this Cargo.toml exists and has a workspace section
-                if potential_workspace.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&potential_workspace) {
-                        if let Ok(doc) = content.parse::<DocumentMut>() {
-                            if doc.get("workspace").is_some() {
-                                return Some((potential_workspace, HashMap::new(), Vec::new()));
-                            }
-                        }
-                    }
+                if potential_workspace.exists()
+                    && let Ok(content) = std::fs::read_to_string(&potential_workspace)
+                    && let Ok(doc) = content.parse::<DocumentMut>()
+                    && doc.get("workspace").is_some()
+                {
+                    return Some((potential_workspace, HashMap::new(), Vec::new()));
                 }
 
                 // Move to parent directory
@@ -496,10 +493,10 @@ impl ProjectAnalyzer {
             }
 
             // Check for table entries with workspace = true
-            if let Some(table) = value.as_table() {
-                if table.get("workspace").and_then(|w| w.as_bool()) == Some(true) {
-                    inherited_fields.insert(key.to_string(), true);
-                }
+            if let Some(table) = value.as_table()
+                && table.get("workspace").and_then(|w| w.as_bool()) == Some(true)
+            {
+                inherited_fields.insert(key.to_string(), true);
             }
         }
 
@@ -507,40 +504,40 @@ impl ProjectAnalyzer {
         let mut workspace_deps = Vec::new();
 
         // Check dependencies
-        if let Some(deps) = document.get("dependencies") {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, value) in deps_table.iter() {
-                    if let Some(table) = value.as_table() {
-                        if table.get("workspace").is_some() {
-                            workspace_deps.push(key.to_string());
-                        }
-                    }
+        if let Some(deps) = document.get("dependencies")
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, value) in deps_table.iter() {
+                if let Some(table) = value.as_table()
+                    && table.get("workspace").is_some()
+                {
+                    workspace_deps.push(key.to_string());
                 }
             }
         }
 
         // Check dev-dependencies
-        if let Some(deps) = document.get("dev-dependencies") {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, value) in deps_table.iter() {
-                    if let Some(table) = value.as_table() {
-                        if table.get("workspace").is_some() {
-                            workspace_deps.push(key.to_string());
-                        }
-                    }
+        if let Some(deps) = document.get("dev-dependencies")
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, value) in deps_table.iter() {
+                if let Some(table) = value.as_table()
+                    && table.get("workspace").is_some()
+                {
+                    workspace_deps.push(key.to_string());
                 }
             }
         }
 
         // Check build-dependencies
-        if let Some(deps) = document.get("build-dependencies") {
-            if let Some(deps_table) = deps.as_table() {
-                for (key, value) in deps_table.iter() {
-                    if let Some(table) = value.as_table() {
-                        if table.get("workspace").is_some() {
-                            workspace_deps.push(key.to_string());
-                        }
-                    }
+        if let Some(deps) = document.get("build-dependencies")
+            && let Some(deps_table) = deps.as_table()
+        {
+            for (key, value) in deps_table.iter() {
+                if let Some(table) = value.as_table()
+                    && table.get("workspace").is_some()
+                {
+                    workspace_deps.push(key.to_string());
                 }
             }
         }
@@ -552,24 +549,10 @@ impl ProjectAnalyzer {
 /// Extract version from a TOML value
 fn extract_version_from_toml(value: &Item) -> Option<String> {
     match value {
-        Item::Value(value) => {
-            if let Some(version) = value.as_str() {
-                Some(version.to_string())
-            } else {
-                None
-            }
-        }
-        Item::Table(table) => {
-            if let Some(version) = table.get("version") {
-                if let Some(version_str) = version.as_str() {
-                    Some(version_str.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }
+        Item::Value(value) => value.as_str().map(|version| version.to_string()),
+        Item::Table(table) => table
+            .get("version")
+            .and_then(|version| version.as_str().map(|version_str| version_str.to_string())),
         _ => None,
     }
 }

@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 clap = "4"
+
+[dev-dependencies]
+kargo-plugin-api = { path = "../kargo-plugin-api" }

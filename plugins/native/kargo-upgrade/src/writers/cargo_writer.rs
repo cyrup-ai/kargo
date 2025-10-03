@@ -45,42 +45,40 @@ impl DependencyWriter for CargoWriter {
                 }
 
                 // Update workspace dependencies if present
-                if let Some(workspace) = document.get_mut("workspace") {
-                    if let Some(workspace_table) = workspace.as_table_mut() {
-                        if let Some(deps) = workspace_table.get_mut("dependencies") {
-                            if let Some(deps_table) = deps.as_table_mut() {
-                                for (name, version) in &direct_updates {
-                                    self.update_dependency_in_table(deps_table, name, version)?;
-                                }
-                            }
-                        }
+                if let Some(workspace) = document.get_mut("workspace")
+                    && let Some(workspace_table) = workspace.as_table_mut()
+                    && let Some(deps) = workspace_table.get_mut("dependencies")
+                    && let Some(deps_table) = deps.as_table_mut()
+                {
+                    for (name, version) in &direct_updates {
+                        self.update_dependency_in_table(deps_table, name, version)?;
                     }
                 }
 
                 // Update regular dependencies
-                if let Some(deps) = document.get_mut("dependencies") {
-                    if let Some(deps_table) = deps.as_table_mut() {
-                        for (name, version) in &direct_updates {
-                            self.update_dependency_in_table(deps_table, name, version)?;
-                        }
+                if let Some(deps) = document.get_mut("dependencies")
+                    && let Some(deps_table) = deps.as_table_mut()
+                {
+                    for (name, version) in &direct_updates {
+                        self.update_dependency_in_table(deps_table, name, version)?;
                     }
                 }
 
                 // Update dev-dependencies
-                if let Some(deps) = document.get_mut("dev-dependencies") {
-                    if let Some(deps_table) = deps.as_table_mut() {
-                        for (name, version) in &dev_updates {
-                            self.update_dependency_in_table(deps_table, name, version)?;
-                        }
+                if let Some(deps) = document.get_mut("dev-dependencies")
+                    && let Some(deps_table) = deps.as_table_mut()
+                {
+                    for (name, version) in &dev_updates {
+                        self.update_dependency_in_table(deps_table, name, version)?;
                     }
                 }
 
                 // Update build-dependencies
-                if let Some(deps) = document.get_mut("build-dependencies") {
-                    if let Some(deps_table) = deps.as_table_mut() {
-                        for (name, version) in &build_updates {
-                            self.update_dependency_in_table(deps_table, name, version)?;
-                        }
+                if let Some(deps) = document.get_mut("build-dependencies")
+                    && let Some(deps_table) = deps.as_table_mut()
+                {
+                    for (name, version) in &build_updates {
+                        self.update_dependency_in_table(deps_table, name, version)?;
                     }
                 }
 
@@ -137,13 +135,12 @@ impl CargoWriter {
                         return Ok(());
                     }
 
-                    if let Some(ver_item) = dep_table.get_mut("version") {
-                        if let Some(ver_value) = ver_item.as_value_mut() {
-                            if ver_value.is_str() {
-                                *ver_value =
-                                    Value::String(toml_edit::Formatted::new(version.to_string()));
-                            }
-                        }
+                    if let Some(ver_item) = dep_table.get_mut("version")
+                        && let Some(ver_value) = ver_item.as_value_mut()
+                        && ver_value.is_str()
+                    {
+                        *ver_value =
+                            Value::String(toml_edit::Formatted::new(version.to_string()));
                     }
                 }
 

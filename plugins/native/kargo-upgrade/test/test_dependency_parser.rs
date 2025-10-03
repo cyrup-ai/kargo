@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::fs;
 
-use krater::up2date::models::{DependencyLocation, DependencyParser, DependencySource};
-use krater::up2date::parsers::{CargoParser, RustScriptParser};
+use kargo_upgrade::models::{DependencyLocation, DependencyParser, DependencySource};
+use kargo_upgrade::parsers::{CargoParser, RustScriptParser};
 
 #[tokio::test]
 async fn test_cargo_parser() -> Result<()> {
@@ -24,9 +24,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.0"
 tokio = { version = "1.0.0", features = ["full"] }
-
-[dev-dependencies]
-tempfile = "3.0.0"
     "#;
 
     fs::write(&cargo_path, cargo_content).await?;
@@ -50,15 +47,25 @@ tempfile = "3.0.0"
     
     assert!(deps_names.contains(&"anyhow".to_string()));
     
-    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").expect("Failed to find 'anyhow' dependency in parsed results");
+    let anyhow_dep = dependencies
+        .iter()
+        .find(|d| d.name == "anyhow")
+        .expect("TEST FAILURE: 'anyhow' dependency not found in parsed results");
     assert_eq!(anyhow_dep.version, "1.0.0");
     assert!(matches!(
         anyhow_dep.location,
         DependencyLocation::CargoTomlDirect
     ));
 
-    // We don't necessarily get tokio in the result set anymore,
-    // so we'll just check anyhow for now until we can fix the parsing
+    let tokio_dep = dependencies
+        .iter()
+        .find(|d| d.name == "tokio")
+        .expect("TEST FAILURE: 'tokio' dependency not found in parsed results");
+    assert_eq!(tokio_dep.version, "1.0.0");
+    assert!(matches!(
+        tokio_dep.location,
+        DependencyLocation::CargoTomlDirect
+    ));
 
     Ok(())
 }
@@ -97,14 +104,20 @@ fn main() {
     assert_eq!(dependencies.len(), 2);
 
     // Check for specific dependencies
-    let anyhow_dep = dependencies.iter().find(|d| d.name == "anyhow").expect("Failed to find 'anyhow' dependency in rust-script parsed results");
+    let anyhow_dep = dependencies
+        .iter()
+        .find(|d| d.name == "anyhow")
+        .expect("TEST FAILURE: 'anyhow' dependency not found in rust-script parsed results");
     assert_eq!(anyhow_dep.version, "1.0.0");
     assert!(matches!(
         anyhow_dep.location,
         DependencyLocation::RustScriptCargo { .. }
     ));
 
-    let tokio_dep = dependencies.iter().find(|d| d.name == "tokio").expect("Failed to find 'tokio' dependency in rust-script parsed results");
+    let tokio_dep = dependencies
+        .iter()
+        .find(|d| d.name == "tokio")
+        .expect("TEST FAILURE: 'tokio' dependency not found in rust-script parsed results");
     assert_eq!(tokio_dep.version, "1.0.0");
     assert!(matches!(
         tokio_dep.location,

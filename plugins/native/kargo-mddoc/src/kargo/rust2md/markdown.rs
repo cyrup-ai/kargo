@@ -44,7 +44,7 @@ impl MarkdownGenerator {
         ));
 
         // Process the root module to start
-        let root_id = self.crate_data.root.clone();
+        let root_id = self.crate_data.root;
         if let Some(root_item) = self.crate_data.index.get(&root_id) {
             if let ItemEnum::Module(module) = &root_item.inner {
                 if let Some(name) = &root_item.name {
@@ -181,19 +181,19 @@ fn group_module_items(item_ids: &[Id], data: &Crate) -> GroupedItems {
     for id in item_ids {
         if let Some(item) = data.index.get(id) {
             match &item.inner {
-                ItemEnum::Module(_) => grouped.modules.push(id.clone()),
+                ItemEnum::Module(_) => grouped.modules.push(*id),
                 ItemEnum::Struct(_)
                 | ItemEnum::Enum(_)
                 | ItemEnum::Union(_)
-                | ItemEnum::TypeAlias(_) => grouped.types.push(id.clone()),
-                ItemEnum::Trait(_) | ItemEnum::TraitAlias(_) => grouped.traits.push(id.clone()),
-                ItemEnum::Function(_) => grouped.functions.push(id.clone()),
+                | ItemEnum::TypeAlias(_) => grouped.types.push(*id),
+                ItemEnum::Trait(_) | ItemEnum::TraitAlias(_) => grouped.traits.push(*id),
+                ItemEnum::Function(_) => grouped.functions.push(*id),
                 ItemEnum::Constant { .. } | ItemEnum::Static(_) => {
-                    grouped.constants.push(id.clone())
+                    grouped.constants.push(*id)
                 }
-                ItemEnum::Macro(_) | ItemEnum::ProcMacro(_) => grouped.macros.push(id.clone()),
-                ItemEnum::Use(_) => grouped.reexports.push(id.clone()),
-                _ => grouped.other_items.push(id.clone()),
+                ItemEnum::Macro(_) | ItemEnum::ProcMacro(_) => grouped.macros.push(*id),
+                ItemEnum::Use(_) => grouped.reexports.push(*id),
+                _ => grouped.other_items.push(*id),
             }
         }
     }
@@ -484,7 +484,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
 }
 
 /// Format type for display
-fn format_type(ty: &Type, data: &Crate) -> String {
+fn format_type(ty: &Type, _data: &Crate) -> String {
     match ty {
         Type::ResolvedPath(path) => {
             let mut result = path.path.clone();
@@ -500,12 +500,12 @@ fn format_type(ty: &Type, data: &Crate) -> String {
             if ts.is_empty() {
                 "()".to_string()
             } else {
-                let types: Vec<String> = ts.iter().map(|t| format_type(t, data)).collect();
+                let types: Vec<String> = ts.iter().map(|t| format_type(t, _data)).collect();
                 format!("({})", types.join(", "))
             }
         }
-        Type::Slice(elem_ty) => format!("[{}]", format_type(elem_ty, data)),
-        Type::Array { type_, len } => format!("[{}; {}]", format_type(type_, data), len),
+        Type::Slice(elem_ty) => format!("[{}]", format_type(elem_ty, _data)),
+        Type::Array { type_, len } => format!("[{}; {}]", format_type(type_, _data), len),
         Type::BorrowedRef {
             lifetime,
             is_mutable,
@@ -518,7 +518,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
             if *is_mutable {
                 result.push_str("mut ");
             }
-            result.push_str(&format_type(type_, data));
+            result.push_str(&format_type(type_, _data));
             result
         }
         // For other type variants, we would implement similar formatting
@@ -651,18 +651,15 @@ fn process_enum_details(output: &mut String, enum_: &Enum, data: &Crate, level: 
                 }
 
                 if let ItemEnum::Variant(variant) = &variant_item.inner {
-                    match &variant.kind {
-                        VariantKind::Plain => {
-                            if let Some(discriminant) = &variant.discriminant {
-                                output.push_str(&format!(
-                                    "Discriminant: `{}`\n\n",
-                                    discriminant.expr
-                                ));
-                            }
+                    if variant.kind == VariantKind::Plain {
+                        if let Some(discriminant) = &variant.discriminant {
+                            output.push_str(&format!(
+                                "Discriminant: `{}`\n\n",
+                                discriminant.expr
+                            ));
                         }
-                        // For tuple and struct variants, we could add tables similar to struct fields
-                        _ => {}
                     }
+                    // For tuple and struct variants, we could add tables similar to struct fields
                 }
             }
         }

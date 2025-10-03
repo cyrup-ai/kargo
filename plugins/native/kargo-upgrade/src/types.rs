@@ -313,8 +313,8 @@ pub struct UpdateWatcher<'a> {
 
 impl<'a> UpdateWatcher<'a> {
     /// Gets the next result
-    pub fn next(self) -> impl Future<Output = Option<UpdateResult>> + Send + 'a {
-        async move { self.receiver.recv().await }
+    pub async fn next(self) -> Option<UpdateResult> {
+        self.receiver.recv().await
     }
 }
 
@@ -341,6 +341,12 @@ impl Default for VersionUpdaterOptions {
 pub struct VersionUpdater {
     /// Options that control the update behavior
     pub options: VersionUpdaterOptions,
+}
+
+impl Default for VersionUpdater {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VersionUpdater {

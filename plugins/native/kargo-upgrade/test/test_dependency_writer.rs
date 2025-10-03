@@ -114,8 +114,13 @@ fn main() {
     // Create test dependencies and updates
     // We need the correct section range, which would normally come from the parser
     let content = source.content();
-    let section_start = content.find("[dependencies]").expect("Failed to find [dependencies] section in rust-script content");
-    let section_end = content[section_start..].find("```").map(|pos| pos + section_start).expect("Failed to find closing ``` for cargo section in rust-script");
+    let section_start = content
+        .find("[dependencies]")
+        .expect("TEST FAILURE: [dependencies] section not found in test rust-script content");
+    let section_end = content[section_start..]
+        .find("```")
+        .map(|pos| pos + section_start)
+        .expect("TEST FAILURE: closing ``` not found for cargo section in test rust-script");
     let section_range = (section_start, section_end);
 
     let dependencies = vec![
@@ -187,8 +192,13 @@ fn main() {
     // Create test dependencies and updates
     // We need the correct line range, which would normally come from the parser
     let content = source.content();
-    let cargo_deps_start = content.find("anyhow").expect("Failed to find 'anyhow' in cargo-deps line");
-    let line_end = content[cargo_deps_start..].find("\n").map(|pos| pos + cargo_deps_start).expect("Failed to find end of cargo-deps line");
+    let cargo_deps_start = content
+        .find("anyhow")
+        .expect("TEST FAILURE: 'anyhow' not found in test cargo-deps line");
+    let line_end = content[cargo_deps_start..]
+        .find("\n")
+        .map(|pos| pos + cargo_deps_start)
+        .expect("TEST FAILURE: end of cargo-deps line not found in test content");
     let line_range = (cargo_deps_start, line_end);
 
     let dependencies = vec![

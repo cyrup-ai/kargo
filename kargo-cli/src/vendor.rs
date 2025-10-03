@@ -192,7 +192,7 @@ impl VendorManager {
         }
 
         // Vendor the dependencies
-        std::fs::create_dir_all(&self.vendor_path)?;
+        tokio::fs::create_dir_all(&self.vendor_path).await?;
 
         for pkg in deps.values() {
             if pkg.source.as_ref().is_some_and(|s| s.repr.starts_with("registry+")) {
