@@ -17,7 +17,7 @@ pub fn command() -> Command {
             Command::new("install")
                 .about("Install a plugin from GitHub or local path")
                 .arg(Arg::new("source")
-                    .help("GitHub URL, org/repo, or local path")
+                    .help("GitHub URL, org/repo, org/repo/plugin, or local path")
                     .required(true)
                     .index(1))
                 .arg(Arg::new("branch")

@@ -25,15 +25,9 @@ pub fn verify_native_plugin(source_path: &Path) -> Result<PluginInfo> {
     for item in syntax_tree.items {
         match item {
             Item::Impl(impl_item) => {
-                if is_native_plugin_impl(&impl_item) {
-                    plugin_info.implements_native_plugin = true;
-                    plugin_info.impl_type = extract_self_type(&impl_item);
-                    info!(
-                        "Found NativePlugin implementation for type: {:?}",
-                        plugin_info.impl_type
-                    );
-                } else if is_plugin_command_impl(&impl_item) {
+                if is_plugin_command_impl(&impl_item) {
                     plugin_info.implements_plugin_command = true;
+                    plugin_info.impl_type = extract_self_type(&impl_item);
                 }
             }
             Item::Static(static_item) => {
@@ -50,9 +44,9 @@ pub fn verify_native_plugin(source_path: &Path) -> Result<PluginInfo> {
         }
     }
 
-    // Check for either new trait or legacy interface
-    if !plugin_info.implements_native_plugin && !plugin_info.implements_plugin_command {
-        anyhow::bail!("Plugin does not implement NativePlugin trait or PluginCommand interface");
+    // Check for PluginCommand implementation
+    if !plugin_info.implements_plugin_command {
+        anyhow::bail!("Plugin does not implement PluginCommand interface");
     }
 
     // Require the create function for dynamic loading
@@ -65,19 +59,10 @@ pub fn verify_native_plugin(source_path: &Path) -> Result<PluginInfo> {
 
 #[derive(Debug, Default)]
 pub struct PluginInfo {
-    pub implements_native_plugin: bool,
     pub implements_plugin_command: bool,
     pub has_declaration: bool,
     pub has_create_function: bool,
     pub impl_type: Option<String>,
-}
-
-fn is_native_plugin_impl(impl_item: &ItemImpl) -> bool {
-    if let Some((_, path, _)) = &impl_item.trait_
-        && let Some(segment) = path.segments.last() {
-        return segment.ident == "NativePlugin";
-    }
-    false
 }
 
 fn is_plugin_command_impl(impl_item: &ItemImpl) -> bool {

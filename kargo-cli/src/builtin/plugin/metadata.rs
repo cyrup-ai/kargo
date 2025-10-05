@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use cargo_metadata::{MetadataCommand, TargetKind};
 use std::path::Path;
-use toml_edit::DocumentMut;
 
 pub struct PluginMetadata {
     pub name: String,
@@ -9,22 +9,31 @@ pub struct PluginMetadata {
 }
 
 pub fn extract_plugin_metadata(cargo_toml_path: &Path) -> Result<PluginMetadata> {
-    let content = std::fs::read_to_string(cargo_toml_path)?;
-    let doc = content.parse::<DocumentMut>()?;
+    let metadata = MetadataCommand::new()
+        .manifest_path(cargo_toml_path)
+        .no_deps()
+        .exec()
+        .context("Failed to execute cargo metadata")?;
 
-    let package = doc["package"].as_table()
-        .ok_or_else(|| anyhow::anyhow!("No [package] section in Cargo.toml"))?;
+    let package = metadata
+        .packages
+        .iter()
+        .find(|p| p.manifest_path.as_std_path() == cargo_toml_path)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Package not found in metadata for manifest: {}",
+                cargo_toml_path.display()
+            )
+        })?;
 
-    let name = package["name"].as_str()
-        .ok_or_else(|| anyhow::anyhow!("No package name in Cargo.toml"))?
-        .to_string();
+    let has_cdylib = package
+        .targets
+        .iter()
+        .any(|t| t.kind.contains(&TargetKind::CDyLib));
 
-    let version = package["version"].as_str()
-        .ok_or_else(|| anyhow::anyhow!("No package version in Cargo.toml"))?
-        .to_string();
-
-    // Check for [lib] section
-    let has_lib = doc.get("lib").is_some();
-
-    Ok(PluginMetadata { name, version, has_lib })
+    Ok(PluginMetadata {
+        name: package.name.to_string(),
+        version: package.version.to_string(),
+        has_lib: has_cdylib,
+    })
 }

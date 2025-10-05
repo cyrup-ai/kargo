@@ -8,7 +8,7 @@ pub fn remove_plugin(source: &str) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
 
     let search_path = match source_type {
-        SourceType::GitHub { org, repo } => {
+        SourceType::GitHub { org, repo, plugin: _ } => {
             config_dir
                 .join("kargo")
                 .join("plugins")

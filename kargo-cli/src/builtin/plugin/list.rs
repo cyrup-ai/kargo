@@ -45,7 +45,7 @@ fn list_installed_plugins() -> Result<()> {
                         let version = version_entry.file_name();
 
                         println!(
-                            "  {}/{} ({:?}) - {:?} v{:?}",
+                            "  {}/{} ({}) - {} v{}",
                             org_name.to_string_lossy(),
                             repo_name.to_string_lossy(),
                             branch_name.to_string_lossy(),
@@ -75,11 +75,23 @@ async fn list_remote_plugins(remote_url: &str) -> Result<()> {
 }
 
 fn scan_for_plugins(dir: &Path) -> Result<()> {
+    const SKIP_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+
     for entry in jwalk::WalkDir::new(dir)
-        .skip_hidden(false)
+        .skip_hidden(true)
         .into_iter()
-        .filter_map(std::result::Result::ok)
     {
+        let entry = entry?;
+
+        let file_type = entry.file_type();
+        if file_type.is_dir() {
+            if let Some(name) = entry.file_name().to_str() {
+                if SKIP_DIRS.contains(&name) {
+                    continue;
+                }
+            }
+        }
+
         if entry.file_name() == "Cargo.toml"
             && let Ok(metadata) = metadata::extract_plugin_metadata(&entry.path())
             && metadata.has_lib
