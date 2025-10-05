@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
-use crate::{git, metadata};
+use super::{git, metadata};
 
 pub async fn list_plugins(remote: Option<&String>) -> Result<()> {
     if let Some(remote_url) = remote {

@@ -15,6 +15,7 @@ use crate::events::{Event, EventBus};
 use crate::vendor::VendorManager;
 
 mod backup;
+pub mod builtin;
 pub mod cli;
 mod commands;
 pub mod config;

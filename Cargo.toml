@@ -9,7 +9,6 @@ members = [
     "plugins/native/kargo-kurate",
     "plugins/native/kargo-mddoc",
     "plugins/native/kargo-mdlint",
-    "plugins/native/kargo-plugin",
     "plugins/native/kargo-sap",
     "plugins/native/kargo-turd",
     "plugins/native/kargo-upgrade",

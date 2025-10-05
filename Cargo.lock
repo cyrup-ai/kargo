@@ -3617,6 +3617,8 @@ dependencies = [
  "env_logger",
  "extism",
  "futures",
+ "git-url-parse",
+ "gix",
  "jwalk",
  "kargo-plugin-api",
  "kargo-upgrade",
@@ -3701,25 +3703,6 @@ dependencies = [
  "kargo-plugin-api",
  "mado",
  "tokio",
-]
-
-[[package]]
-name = "kargo-plugin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "dirs 6.0.0",
- "env_logger",
- "git-url-parse",
- "gix",
- "jwalk",
- "kargo-plugin-api",
- "log",
- "serde",
- "tempfile",
- "tokio",
- "toml_edit 0.23.6",
 ]
 
 [[package]]

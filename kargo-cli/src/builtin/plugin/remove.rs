@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::parser::{self, SourceType};
+use super::parser::{self, SourceType};
 
 pub fn remove_plugin(source: &str) -> Result<()> {
     let source_type = parser::parse_source(source)?;

@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+mod builtin;
 mod cli;
 mod plugins;
 

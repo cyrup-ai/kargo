@@ -9,7 +9,7 @@ use kargo_plugin_api::ExecutionContext;
 #[must_use] 
 pub fn build_root_cli(pm: &PluginManager) -> Command {
     let mut root = Command::new("kargo")
-        .about("Kargo Flux – cargo wrapper with zero-knowledge plugins")
+        .about("Kargo – cargo wrapper with zero-knowledge plugins")
         .version(env!("CARGO_PKG_VERSION"))
         .arg(
             clap::Arg::new("alias")
@@ -45,6 +45,9 @@ pub fn build_root_cli(pm: &PluginManager) -> Command {
             .trailing_var_arg(true)
             .allow_external_subcommands(true),
     );
+
+    // Add built-in plugin management command
+    root = root.subcommand(crate::builtin::plugin::command());
 
     for (_, plugin) in pm.plugins_iter() {
         root = root.subcommand(plugin.clap());
@@ -103,8 +106,10 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
             }
         }
         Some((name, sub)) => {
-            // Check if this is a known plugin
-            if let Some(plugin) = pm.get(name) {
+            // Handle built-in plugin management command first
+            if name == "plugin" {
+                crate::builtin::plugin::execute(sub).await?;
+            } else if let Some(plugin) = pm.get(name) {
                 // Run the plugin
                 let mut args = vec![name.to_string()];
                 args.extend(gather_raw_args(sub));

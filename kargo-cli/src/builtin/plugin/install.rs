@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::{build, git, metadata, parser};
+use super::{build, git, metadata, parser};
 use parser::SourceType;
 
 pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()> {
