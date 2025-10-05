@@ -41,10 +41,10 @@ impl WasmPluginAdapter {
         let mut plugin = self
             .plugin
             .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock plugin mutex: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to lock plugin mutex: {e}"))?;
         let output = plugin
             .call::<&str, String>(func, input)
-            .with_context(|| format!("Failed to call WASM function: {}", func))?;
+            .with_context(|| format!("Failed to call WASM function: {func}"))?;
         Ok(output)
     }
 }
@@ -56,17 +56,14 @@ impl PluginCommand for WasmPluginAdapter {
                 // Parse the JSON into command name and about
                 match serde_json::from_str::<serde_json::Value>(&json) {
                     Ok(val) => {
-                        let name = match val.get("name").and_then(|v| v.as_str()) {
-                            Some(n) => n.to_string(),
-                            None => {
-                                eprintln!("Plugin command missing 'name' field");
-                                return clap::Command::new("wasm-missing-name");
-                            }
+                        let name = if let Some(n) = val.get("name").and_then(|v| v.as_str()) { n.to_string() } else {
+                            eprintln!("Plugin command missing 'name' field");
+                            return clap::Command::new("wasm-missing-name");
                         };
                         let about = val
                             .get("about")
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+                            .map(std::string::ToString::to_string);
 
                         let mut cmd = clap::Command::new(name);
                         if let Some(about) = about {
@@ -75,7 +72,7 @@ impl PluginCommand for WasmPluginAdapter {
                         cmd
                     }
                     Err(e) => {
-                        eprintln!("Failed to parse command spec: {}", e);
+                        eprintln!("Failed to parse command spec: {e}");
                         clap::Command::new("wasm-bad-spec")
                     }
                 }
@@ -93,9 +90,9 @@ impl PluginCommand for WasmPluginAdapter {
             let input = serde_json::to_string(&ctx.matched_args)?;
             let mut plugin = plugin
                 .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to lock plugin mutex: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to lock plugin mutex: {e}"))?;
             let output = plugin.call::<&str, String>("_kargo_plugin_execute", &input)?;
-            println!("{}", output);
+            println!("{output}");
             Ok(())
         })
     }

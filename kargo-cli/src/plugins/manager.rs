@@ -28,6 +28,7 @@ impl Default for PluginManager {
 }
 
 impl PluginManager {
+    #[must_use] 
     pub fn new() -> Self {
         // 1) optional env override
         use std::env;
@@ -39,7 +40,7 @@ impl PluginManager {
         if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
             let workspace_root = PathBuf::from(manifest_dir)
                 .parent()
-                .map(|p| p.to_path_buf());
+                .map(std::path::Path::to_path_buf);
             if let Some(root) = workspace_root {
                 // Look for plugins in plugins/native directory
                 let native_plugins_dir = root.join("plugins").join("native");
@@ -53,7 +54,7 @@ impl PluginManager {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists()
                                 && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                info!("Discovered native plugin candidate: {}", name);
+                                info!("Discovered native plugin candidate: {name}");
                                 sp.push(path);
                             }
                         }
@@ -68,7 +69,7 @@ impl PluginManager {
                             let path = entry.path();
                             if path.is_dir() && path.join("Cargo.toml").exists() {
                                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                    info!("Discovered WASM plugin candidate: {}", name);
+                                    info!("Discovered WASM plugin candidate: {name}");
                                     sp.push(path);
                                 }
                             } else if path.extension().and_then(|e| e.to_str()) == Some("wasm")
@@ -76,8 +77,7 @@ impl PluginManager {
                                 if let Some(name) = parent.file_name().and_then(|n| n.to_str())
                                 {
                                     info!(
-                                        "Discovered standalone WASM module for plugin: {}",
-                                        name
+                                        "Discovered standalone WASM module for plugin: {name}"
                                     );
                                 }
                                 sp.push(parent.to_path_buf());
@@ -140,7 +140,7 @@ impl PluginManager {
             // Check if this directory itself is a plugin (for workspace siblings)
             if d.join("Cargo.toml").is_file() {
                 match self.build_and_load_rust_project(d) {
-                    Ok(_) => info!("Successfully loaded plugin from {}", d.display()),
+                    Ok(()) => info!("Successfully loaded plugin from {}", d.display()),
                     Err(e) => info!("Failed to load plugin from {}: {}", d.display(), e),
                 }
                 continue;
@@ -155,13 +155,13 @@ impl PluginManager {
                 } else {
                     match path.extension().and_then(OsStr::to_str) {
                         Some("so" | "dylib" | "dll") => match self.load_native(&path) {
-                            Ok(_) => info!("Successfully loaded native plugin: {}", path.display()),
+                            Ok(()) => info!("Successfully loaded native plugin: {}", path.display()),
                             Err(e) => {
-                                info!("Failed to load native plugin {}: {}", path.display(), e)
+                                info!("Failed to load native plugin {}: {}", path.display(), e);
                             }
                         },
                         Some("wasm") => match self.load_wasm(&path) {
-                            Ok(_) => info!("Successfully loaded WASM plugin: {}", path.display()),
+                            Ok(()) => info!("Successfully loaded WASM plugin: {}", path.display()),
                             Err(e) => info!("Failed to load WASM plugin {}: {}", path.display(), e),
                         },
                         _ => {}
@@ -171,12 +171,13 @@ impl PluginManager {
         }
 
         for name in self.plugins.keys() {
-            info!("Loaded plugin: {}", name);
+            info!("Loaded plugin: {name}");
         }
 
         Ok(())
     }
 
+    #[must_use] 
     pub fn get(&self, name: &str) -> Option<&dyn PluginCommand> {
         self.plugins.get(name).map(|boxed| &**boxed)
     }
@@ -196,7 +197,7 @@ impl PluginManager {
                 None => true,
                 Some(ref art) => {
                     let src_max = fs::read_dir(dir)?
-                        .filter_map(|e| e.ok())
+                        .filter_map(std::result::Result::ok)
                         .flat_map(|e| e.metadata().and_then(|m| m.modified()))
                         .max();
                     let art_mod = fs::metadata(art).and_then(|m| m.modified()).ok();
@@ -241,14 +242,13 @@ impl PluginManager {
             anyhow::bail!("No lib.rs or main.rs found in {}", src_dir.display());
         };
 
-        match trait_scanner::verify_native_plugin(&source_file) {
-            Ok(_plugin_info) => Ok(()),
-            Err(_) => {
-                // Don't fail hard - allow plugins that don't use traits yet
-                // This is for backward compatibility
-                Ok(())
-            }
-        }
+        // Enforce validation - plugins MUST implement required traits
+        trait_scanner::verify_native_plugin(&source_file)
+            .with_context(|| format!(
+                "Plugin at {} failed trait validation - must implement PluginCommand and export kargo_plugin_create",
+                dir.display()
+            ))
+            .map(|_| ())
     }
 
     /* -------- existing native lib -------- */
@@ -330,7 +330,7 @@ fn find_existing_lib(dir: &Path) -> Result<Option<PathBuf>> {
     };
 
     // Look for the specific library file
-    let lib_name = format!("{}{}.{}", prefix, crate_name, ext);
+    let lib_name = format!("{prefix}{crate_name}.{ext}");
     let lib_path = release.join(&lib_name);
 
     if lib_path.exists() {

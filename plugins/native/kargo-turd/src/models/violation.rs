@@ -75,10 +75,11 @@ pub struct FunctionInfo {
 /// let hash = compute_file_hash(path);
 /// assert_eq!(hash.len(), 8);
 /// ```
+#[must_use] 
 pub fn compute_file_hash(path: &std::path::Path) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
     let result = hasher.finalize();
-    format!("{:x}", result)[..8].to_string()
+    format!("{result:x}")[..8].to_string()
 }

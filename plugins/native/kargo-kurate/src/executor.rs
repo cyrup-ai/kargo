@@ -11,6 +11,11 @@ pub struct KargoExecutor {
 }
 
 impl KargoExecutor {
+    /// Creates a new `KargoExecutor` with an output processor
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the output processor fails to initialize
     pub fn new() -> Result<Self> {
         Ok(Self {
             processor: OutputProcessor::new()?,
@@ -18,6 +23,10 @@ impl KargoExecutor {
     }
 
     /// Run a cargo command synchronously
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cargo command fails to execute or exits with non-zero status
     pub fn run_sync(&self, args: &[String], working_dir: &Path) -> Result<String> {
         // Log command start if needed
 
@@ -36,7 +45,7 @@ impl KargoExecutor {
 
         // Process stderr if there are errors
         if !stderr_str.is_empty() {
-            eprintln!("{}", stderr_str);
+            eprintln!("{stderr_str}");
         }
 
         // Log command finish if needed
@@ -53,6 +62,10 @@ impl KargoExecutor {
     }
 
     /// Run a cargo command asynchronously with streaming output
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cargo command fails to execute or exits with non-zero status
     pub async fn run_async(&self, args: &[String], working_dir: &Path) -> Result<()> {
         let mut child = AsyncCommand::new("cargo")
             .args(args)
@@ -70,7 +83,7 @@ impl KargoExecutor {
             tokio::spawn(async move {
                 while let Ok(Some(line)) = reader.next_line().await {
                     let processed = processor.process_line(&line);
-                    println!("{}", processed);
+                    println!("{processed}");
                 }
             });
         }
@@ -83,7 +96,7 @@ impl KargoExecutor {
             tokio::spawn(async move {
                 while let Ok(Some(line)) = reader.next_line().await {
                     let processed = processor.process_line(&line);
-                    eprintln!("{}", processed);
+                    eprintln!("{processed}");
                 }
             });
         }

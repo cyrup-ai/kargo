@@ -22,7 +22,7 @@ impl PackageSpec {
                 // Just a package name
                 let name = parts[0].trim();
                 if Self::is_valid_package_name(name) {
-                    debug!("Parsed package name: {}", name);
+                    debug!("Parsed package name: {name}");
                     Ok(Self {
                         name: name.to_string(),
                         version: None,
@@ -37,7 +37,7 @@ impl PackageSpec {
                 let version = parts[1].trim();
 
                 if Self::is_valid_package_name(name) {
-                    debug!("Parsed package name: {} with version: {}", name, version);
+                    debug!("Parsed package name: {name} with version: {version}");
                     Ok(Self {
                         name: name.to_string(),
                         version: Some(version.to_string()),
@@ -47,8 +47,7 @@ impl PackageSpec {
                 }
             }
             _ => Err(Error::PackageSpecParse(format!(
-                "Invalid package specification: {}",
-                spec
+                "Invalid package specification: {spec}"
             ))),
         }
     }
@@ -63,21 +62,28 @@ impl PackageSpec {
         // Rust crate names can contain alphanumeric characters, - and _
         // They cannot start with a digit, - or _
         lazy_static::lazy_static! {
-            static ref CRATE_NAME_RE: Regex = Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
-                .expect("BUG: hardcoded crate name validation regex pattern is invalid");
+            static ref CRATE_NAME_RE: Regex = match Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$") {
+                Ok(re) => re,
+                Err(e) => {
+                    eprintln!("FATAL: Failed to compile hardcoded crate name validation regex: {e}");
+                    std::process::exit(1);
+                }
+            };
         }
         CRATE_NAME_RE.is_match(name)
     }
 
     /// Get the package version as a dependency specification string
+    #[must_use] 
     pub fn version_spec(&self) -> String {
         match &self.version {
-            Some(version) => format!("\"{}\"", version),
+            Some(version) => format!("\"{version}\""),
             None => "\"*\"".to_string(),
         }
     }
 
     /// Get the output filename for the JSON documentation
+    #[must_use] 
     pub fn json_filename(&self) -> String {
         match &self.version {
             Some(version) => format!("{}-{}.json", self.name, version),
@@ -86,6 +92,7 @@ impl PackageSpec {
     }
 
     /// Get the output filename for the Markdown documentation
+    #[must_use] 
     pub fn markdown_filename(&self) -> String {
         match &self.version {
             Some(version) => format!("{}-{}.md", self.name, version),
@@ -94,6 +101,7 @@ impl PackageSpec {
     }
 
     /// Get a display name for the package (useful for status messages)
+    #[must_use] 
     pub fn display_name(&self) -> String {
         match &self.version {
             Some(version) => format!("{}@{}", self.name, version),

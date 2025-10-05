@@ -35,12 +35,11 @@ log = { workspace = true }
 env_logger = { workspace = true }
 
 # Async runtime
-tokio = { workspace = true, features = ["fs", "rt", "macros"] }
+tokio = { workspace = true }
 
 # TOML editing
 toml_edit = { workspace = true }
 lazy_static = { workspace = true }
-kargo-plugin-macros = { version = "0.1.0", path = "../../../kargo-plugin/kargo-plugin-macros" }
 
 [lib]
 name = "kargo_mddoc"

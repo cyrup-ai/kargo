@@ -84,7 +84,9 @@ fn main() -> anyhow::Result<()> {
     let json_path = generator.run()?;
 
     // By default, we generate Markdown unless json_only is specified
-    if !cli.json_only {
+    if cli.json_only {
+        info!("JSON documentation generated at: {}", json_path.display());
+    } else {
         debug!("Converting JSON to Markdown");
         let markdown_path = crate::markdown::convert_to_markdown(&json_path)?;
         info!(
@@ -96,11 +98,9 @@ fn main() -> anyhow::Result<()> {
         if !cli.keep_json {
             debug!("Removing intermediate JSON file");
             if let Err(e) = std::fs::remove_file(&json_path) {
-                debug!("Failed to remove JSON file: {}", e);
+                debug!("Failed to remove JSON file: {e}");
             }
         }
-    } else {
-        info!("JSON documentation generated at: {}", json_path.display());
     }
 
     Ok(())

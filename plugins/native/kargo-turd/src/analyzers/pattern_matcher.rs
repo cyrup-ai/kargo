@@ -2,26 +2,37 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use crate::models::Violation;
 
+// Helper function to compile regex patterns with proper error handling
+fn compile_regex(pattern: &str) -> Regex {
+    match Regex::new(pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile regex pattern '{pattern}': {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 // ============================================================================
 // TIER 1 COMMENT PATTERNS - High confidence stub indicators
 // ============================================================================
 
 lazy_static! {
     static ref TIER1_COMMENT_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"(?i)IN A REAL").expect("Invalid regex pattern: IN A REAL"),
-        Regex::new(r"(?i)IN PRODUCTION").expect("Invalid regex pattern: IN PRODUCTION"),
-        Regex::new(r"(?i)IN A PRODUCTION").expect("Invalid regex pattern: IN A PRODUCTION"),
-        Regex::new(r"(?i)FOR NOW").expect("Invalid regex pattern: FOR NOW"),
-        Regex::new(r"\bTODO\b").expect("Invalid regex pattern: TODO"),
-        Regex::new(r"\bFIXME\b").expect("Invalid regex pattern: FIXME"),
-        Regex::new(r"\bWIP\b").expect("Invalid regex pattern: WIP"),
-        Regex::new(r"(?i)WORK IN PROGRESS").expect("Invalid regex pattern: WORK IN PROGRESS"),
-        Regex::new(r"(?i)HACK").expect("Invalid regex pattern: HACK"),
-        Regex::new(r"(?i)WOULD REQUIRE").expect("Invalid regex pattern: WOULD REQUIRE"),
-        Regex::new(r"(?i)WOULD NEED").expect("Invalid regex pattern: WOULD NEED"),
-        Regex::new(r"\bFIX\b").expect("Invalid regex pattern: FIX"),
-        Regex::new(r"(?i)IN PRACTICE").expect("Invalid regex pattern: IN PRACTICE"),
-        Regex::new(r"(?i)HOPEFUL").expect("Invalid regex pattern: HOPEFUL"),
+        compile_regex(r"(?i)IN A REAL"),
+        compile_regex(r"(?i)IN PRODUCTION"),
+        compile_regex(r"(?i)IN A PRODUCTION"),
+        compile_regex(r"(?i)FOR NOW"),
+        compile_regex(r"\bTODO\b"),
+        compile_regex(r"\bFIXME\b"),
+        compile_regex(r"\bWIP\b"),
+        compile_regex(r"(?i)WORK IN PROGRESS"),
+        compile_regex(r"(?i)HACK"),
+        compile_regex(r"(?i)WOULD REQUIRE"),
+        compile_regex(r"(?i)WOULD NEED"),
+        compile_regex(r"\bFIX\b"),
+        compile_regex(r"(?i)IN PRACTICE"),
+        compile_regex(r"(?i)HOPEFUL"),
     ];
 
     // ========================================================================
@@ -29,9 +40,9 @@ lazy_static! {
     // ========================================================================
 
     static ref TIER2_COMMENT_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"(?i)DUMMY").expect("Invalid regex pattern: DUMMY"),
-        Regex::new(r"(?i)MOCK").expect("Invalid regex pattern: MOCK"),
-        Regex::new(r"(?i)PLACEHOLDER").expect("Invalid regex pattern: PLACEHOLDER"),
+        compile_regex(r"(?i)DUMMY"),
+        compile_regex(r"(?i)MOCK"),
+        compile_regex(r"(?i)PLACEHOLDER"),
     ];
 
     // ========================================================================
@@ -39,24 +50,25 @@ lazy_static! {
     // ========================================================================
 
     static ref TIER3_COMMENT_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"\bblock_on\b").expect("Invalid regex pattern: block_on"),
-        Regex::new(r"\bspawn_blocking\b").expect("Invalid regex pattern: spawn_blocking"),
-        Regex::new(r"(?i)actual").expect("Invalid regex pattern: actual"),
-        Regex::new(r"(?i)legacy").expect("Invalid regex pattern: legacy"),
-        Regex::new(r"(?i)backward compatibility").expect("Invalid regex pattern: backward compatibility"),
-        Regex::new(r"(?i)shim").expect("Invalid regex pattern: shim"),
-        Regex::new(r"(?i)fallback").expect("Invalid regex pattern: fallback"),
-        Regex::new(r"(?i)fall back").expect("Invalid regex pattern: fall back"),
+        compile_regex(r"\bblock_on\b"),
+        compile_regex(r"\bspawn_blocking\b"),
+        compile_regex(r"(?i)actual"),
+        compile_regex(r"(?i)legacy"),
+        compile_regex(r"(?i)backward compatibility"),
+        compile_regex(r"(?i)shim"),
+        compile_regex(r"(?i)fallback"),
+        compile_regex(r"(?i)fall back"),
     ];
 }
 
 /// Find all comment violations for a specific tier
 ///
 /// Returns violations with:
-/// - line_number: 1-indexed line where match found
-/// - search_term: The exact text that matched (e.g., "TODO", "FIXME")
-/// - method_name: Empty string (not applicable for comment patterns)
+/// - `line_number`: 1-indexed line where match found
+/// - `search_term`: The exact text that matched (e.g., "TODO", "FIXME")
+/// - `method_name`: Empty string (not applicable for comment patterns)
 /// - context: 2 lines before + match line + 2 lines after
+#[must_use] 
 pub fn find_comment_violations(content: &str, tier: u8) -> Vec<Violation> {
     let patterns = match tier {
         1 => &*TIER1_COMMENT_PATTERNS,
@@ -110,36 +122,37 @@ fn extract_context(content: &str, line_num: usize) -> String {
 
 lazy_static! {
     static ref TIER1_METHOD_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"\w+_stub\(").expect("Invalid regex pattern: *_stub("),
-        Regex::new(r"stub_\w+\(").expect("Invalid regex pattern: stub_*("),
-        Regex::new(r"\w+_temp\(").expect("Invalid regex pattern: *_temp("),
-        Regex::new(r"temp_\w+\(").expect("Invalid regex pattern: temp_*("),
-        Regex::new(r"\w+_mock\(").expect("Invalid regex pattern: *_mock("),
-        Regex::new(r"mock_\w+\(").expect("Invalid regex pattern: mock_*("),
-        Regex::new(r"\w+_dummy\(").expect("Invalid regex pattern: *_dummy("),
-        Regex::new(r"dummy_\w+\(").expect("Invalid regex pattern: dummy_*("),
-        Regex::new(r"\w+_placeholder\(").expect("Invalid regex pattern: *_placeholder("),
-        Regex::new(r"placeholder_\w+\(").expect("Invalid regex pattern: placeholder_*("),
-        Regex::new(r"\w+_tmp\(").expect("Invalid regex pattern: *_tmp("),
-        Regex::new(r"tmp_\w+\(").expect("Invalid regex pattern: tmp_*("),
-        Regex::new(r"\w+_hack\(").expect("Invalid regex pattern: *_hack("),
-        Regex::new(r"hack_\w+\(").expect("Invalid regex pattern: hack_*("),
+        compile_regex(r"\w+_stub\("),
+        compile_regex(r"stub_\w+\("),
+        compile_regex(r"\w+_temp\("),
+        compile_regex(r"temp_\w+\("),
+        compile_regex(r"\w+_mock\("),
+        compile_regex(r"mock_\w+\("),
+        compile_regex(r"\w+_dummy\("),
+        compile_regex(r"dummy_\w+\("),
+        compile_regex(r"\w+_placeholder\("),
+        compile_regex(r"placeholder_\w+\("),
+        compile_regex(r"\w+_tmp\("),
+        compile_regex(r"tmp_\w+\("),
+        compile_regex(r"\w+_hack\("),
+        compile_regex(r"hack_\w+\("),
     ];
 
     static ref TIER2_METHOD_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"\w+_quick\(").expect("Invalid regex pattern: *_quick("),
-        Regex::new(r"quick_\w+\(").expect("Invalid regex pattern: quick_*("),
-        Regex::new(r"\w+_workaround\(").expect("Invalid regex pattern: *_workaround("),
-        Regex::new(r"workaround_\w+\(").expect("Invalid regex pattern: workaround_*("),
-        Regex::new(r"\w+_fake\(").expect("Invalid regex pattern: *_fake("),
-        Regex::new(r"fake_\w+\(").expect("Invalid regex pattern: fake_*("),
-        Regex::new(r"\w+_unimplemented\(").expect("Invalid regex pattern: *_unimplemented("),
+        compile_regex(r"\w+_quick\("),
+        compile_regex(r"quick_\w+\("),
+        compile_regex(r"\w+_workaround\("),
+        compile_regex(r"workaround_\w+\("),
+        compile_regex(r"\w+_fake\("),
+        compile_regex(r"fake_\w+\("),
+        compile_regex(r"\w+_unimplemented\("),
     ];
 }
 
 /// Find method naming violations
 ///
 /// Captures the method name (without parenthesis) in the violation
+#[must_use] 
 pub fn find_method_naming_violations(content: &str, tier: u8) -> Vec<Violation> {
     let patterns = match tier {
         1 => &*TIER1_METHOD_PATTERNS,
@@ -174,26 +187,27 @@ pub fn find_method_naming_violations(content: &str, tier: u8) -> Vec<Violation> 
 
 lazy_static! {
     static ref TIER1_VAR_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"\bstub_\w+").expect("Invalid regex pattern: stub_*"),
-        Regex::new(r"\b\w+_stub\b").expect("Invalid regex pattern: *_stub"),
-        Regex::new(r"\btemp_\w+").expect("Invalid regex pattern: temp_*"),
-        Regex::new(r"\b\w+_temp\b").expect("Invalid regex pattern: *_temp"),
-        Regex::new(r"\btmp_\w+").expect("Invalid regex pattern: tmp_*"),
-        Regex::new(r"\b\w+_tmp\b").expect("Invalid regex pattern: *_tmp"),
-        Regex::new(r"\bmock_\w+").expect("Invalid regex pattern: mock_*"),
-        Regex::new(r"\b\w+_mock\b").expect("Invalid regex pattern: *_mock"),
-        Regex::new(r"\bdummy_\w+").expect("Invalid regex pattern: dummy_*"),
-        Regex::new(r"\b\w+_dummy\b").expect("Invalid regex pattern: *_dummy"),
-        Regex::new(r"\bfake_\w+").expect("Invalid regex pattern: fake_*"),
-        Regex::new(r"\b\w+_fake\b").expect("Invalid regex pattern: *_fake"),
-        Regex::new(r"\bhardcoded_\w+").expect("Invalid regex pattern: hardcoded_*"),
-        Regex::new(r"\b\w+_hardcoded\b").expect("Invalid regex pattern: *_hardcoded"),
+        compile_regex(r"\bstub_\w+"),
+        compile_regex(r"\b\w+_stub\b"),
+        compile_regex(r"\btemp_\w+"),
+        compile_regex(r"\b\w+_temp\b"),
+        compile_regex(r"\btmp_\w+"),
+        compile_regex(r"\b\w+_tmp\b"),
+        compile_regex(r"\bmock_\w+"),
+        compile_regex(r"\b\w+_mock\b"),
+        compile_regex(r"\bdummy_\w+"),
+        compile_regex(r"\b\w+_dummy\b"),
+        compile_regex(r"\bfake_\w+"),
+        compile_regex(r"\b\w+_fake\b"),
+        compile_regex(r"\bhardcoded_\w+"),
+        compile_regex(r"\b\w+_hardcoded\b"),
     ];
 }
 
 /// Find variable naming violations (Tier 1 only)
 ///
 /// Only checks tier 1 - variable naming is high-confidence stub indicator
+#[must_use] 
 pub fn find_variable_naming_violations(content: &str, tier: u8) -> Vec<Violation> {
     if tier != 1 {
         return vec![];  // Only tier 1 has variable patterns
@@ -222,14 +236,15 @@ pub fn find_variable_naming_violations(content: &str, tier: u8) -> Vec<Violation
 // ============================================================================
 
 lazy_static! {
-    static ref HARDCODED_URL: Regex = Regex::new(r"https?://").expect("Invalid regex pattern: URL");
-    static ref HARDCODED_IP: Regex = Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").expect("Invalid regex pattern: IP address");
-    static ref HARDCODED_PORT: Regex = Regex::new(r":\d{4,5}\b").expect("Invalid regex pattern: port number");
+    static ref HARDCODED_URL: Regex = compile_regex(r"https?://");
+    static ref HARDCODED_IP: Regex = compile_regex(r"\b(?:\d{1,3}\.){3}\d{1,3}\b");
+    static ref HARDCODED_PORT: Regex = compile_regex(r":\d{4,5}\b");
 }
 
 /// Find hardcoded values (URLs, IPs, ports)
 ///
 /// These are tier 1 violations (should be in config files)
+#[must_use] 
 pub fn find_hardcoded_values(content: &str) -> Vec<Violation> {
     let mut violations = Vec::new();
 

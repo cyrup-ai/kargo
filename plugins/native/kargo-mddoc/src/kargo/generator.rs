@@ -114,23 +114,20 @@ impl DocGenerator {
 
     /// Set up the temporary directory
     fn setup_temp_dir(config: &Config) -> Result<(Option<TempDir>, PathBuf), Error> {
-        match &config.temp_dir {
-            Some(dir) => {
-                // Use the specified directory
-                utils::create_dir_all(dir)?;
-                debug!("Using specified temporary directory: {}", dir.display());
-                Ok((None, dir.clone()))
-            }
-            None => {
-                // Create a new temporary directory
-                let temp_dir = tempfile::Builder::new()
-                    .prefix("rustdoc-md-")
-                    .tempdir()
-                    .map_err(|e| Error::TempProjectSetup(e.to_string()))?;
-                let temp_path = temp_dir.path().to_path_buf();
-                debug!("Created temporary directory: {}", temp_path.display());
-                Ok((Some(temp_dir), temp_path))
-            }
+        if let Some(dir) = &config.temp_dir {
+            // Use the specified directory
+            utils::create_dir_all(dir)?;
+            debug!("Using specified temporary directory: {}", dir.display());
+            Ok((None, dir.clone()))
+        } else {
+            // Create a new temporary directory
+            let temp_dir = tempfile::Builder::new()
+                .prefix("rustdoc-md-")
+                .tempdir()
+                .map_err(|e| Error::TempProjectSetup(e.to_string()))?;
+            let temp_path = temp_dir.path().to_path_buf();
+            debug!("Created temporary directory: {}", temp_path.display());
+            Ok((Some(temp_dir), temp_path))
         }
     }
 
@@ -261,18 +258,16 @@ edition = "2021"
 impl Drop for DocGenerator {
     fn drop(&mut self) {
         // Clean up temporary directory if needed
-        if !self.config.keep_temp {
-            if let Some(temp_dir) = self.temp_dir.take() {
-                debug!("Cleaning up temporary directory");
-                if let Err(e) = temp_dir.close() {
-                    warn!("Failed to clean up temporary directory: {}", e);
-                }
-            }
-        } else {
+        if self.config.keep_temp {
             debug!(
                 "Keeping temporary directory: {}",
                 self.project_dir.display()
             );
+        } else if let Some(temp_dir) = self.temp_dir.take() {
+            debug!("Cleaning up temporary directory");
+            if let Err(e) = temp_dir.close() {
+                warn!("Failed to clean up temporary directory: {e}");
+            }
         }
     }
 }

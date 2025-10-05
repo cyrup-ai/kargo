@@ -11,6 +11,9 @@ pub struct Config {
 
     /// Output directory for generated task files (default: ./task)
     pub output_dir: PathBuf,
+
+    /// Tokio runtime handle for watch mode (required for watchexec)
+    pub runtime_handle: Option<tokio::runtime::Handle>,
 }
 
 impl Default for Config {
@@ -22,6 +25,7 @@ impl Default for Config {
                 "**/task/**".to_string(),    // Don't analyze our own output
             ],
             output_dir: PathBuf::from("./task"),
+            runtime_handle: None,
         }
     }
 }

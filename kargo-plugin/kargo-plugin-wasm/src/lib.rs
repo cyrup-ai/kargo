@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// This interface is designed to be implemented by:
 /// - Rust (compiled to WASM)
-/// - Python (via py_mini_racer or similar)
+/// - Python (via `py_mini_racer` or similar)
 /// - Node/TypeScript (native WASM support)
-/// - Go (via TinyGo)
+/// - Go (via `TinyGo`)
 /// - Any language that compiles to WASM
 ///
 /// Plugins run in a sandboxed environment with:

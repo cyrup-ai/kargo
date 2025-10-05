@@ -35,7 +35,7 @@ impl Toolchain {
         // Create directory if it doesn't exist
         if !cache_dir.exists() {
             fs::create_dir_all(&cache_dir)
-                .map_err(|e| Error::Other(format!("Failed to create cache directory: {}", e)))?;
+                .map_err(|e| Error::Other(format!("Failed to create cache directory: {e}")))?;
         }
 
         Ok(cache_dir)
@@ -52,12 +52,12 @@ impl Toolchain {
 
         // Read the timestamp file
         let timestamp_str = fs::read_to_string(&cache_file)
-            .map_err(|e| Error::Other(format!("Failed to read cache file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to read cache file: {e}")))?;
 
         let timestamp = timestamp_str
             .trim()
             .parse::<u64>()
-            .map_err(|e| Error::Other(format!("Invalid timestamp format: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Invalid timestamp format: {e}")))?;
 
         // Convert to SystemTime
         let timestamp_time = SystemTime::UNIX_EPOCH + Duration::from_secs(timestamp);
@@ -80,12 +80,12 @@ impl Toolchain {
         // Get current timestamp
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(|e| Error::Other(format!("Failed to get system time: {}", e)))?
+            .map_err(|e| Error::Other(format!("Failed to get system time: {e}")))?
             .as_secs();
 
         // Write to cache file
         fs::write(&cache_file, timestamp.to_string())
-            .map_err(|e| Error::Other(format!("Failed to write cache file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to write cache file: {e}")))?;
 
         Ok(())
     }
@@ -129,7 +129,7 @@ impl Toolchain {
         let install_output = Command::new("rustup")
             .args(["toolchain", "install", "nightly"])
             .output()
-            .map_err(|e| Error::Toolchain(format!("Failed to install nightly: {}", e)))?;
+            .map_err(|e| Error::Toolchain(format!("Failed to install nightly: {e}")))?;
 
         if !install_output.status.success() {
             return Err(Error::Toolchain(format!(
@@ -147,7 +147,7 @@ impl Toolchain {
         let update_output = Command::new("rustup")
             .args(["update", "nightly"])
             .output()
-            .map_err(|e| Error::Toolchain(format!("Failed to update nightly: {}", e)))?;
+            .map_err(|e| Error::Toolchain(format!("Failed to update nightly: {e}")))?;
 
         if !update_output.status.success() {
             return Err(Error::Toolchain(format!(
@@ -171,12 +171,14 @@ impl Toolchain {
 
         let output_str = String::from_utf8_lossy(&output.stdout);
 
-        if !output_str.contains("rust-docs (installed)") {
+        if output_str.contains("rust-docs (installed)") {
+            debug!("Rust-docs component is already installed");
+        } else {
             info!("Installing rust-docs component for nightly toolchain");
             let install_output = Command::new("rustup")
                 .args(["component", "add", "rust-docs", "--toolchain", "nightly"])
                 .output()
-                .map_err(|e| Error::Toolchain(format!("Failed to install rust-docs: {}", e)))?;
+                .map_err(|e| Error::Toolchain(format!("Failed to install rust-docs: {e}")))?;
 
             if !install_output.status.success() {
                 return Err(Error::Toolchain(format!(
@@ -186,8 +188,6 @@ impl Toolchain {
             }
 
             info!("Rust-docs component installed successfully");
-        } else {
-            debug!("Rust-docs component is already installed");
         }
 
         Ok(())
@@ -207,21 +207,21 @@ impl Toolchain {
             cmd.current_dir(dir);
         }
 
-        debug!("Running command: {:?} {:?}", command, args);
+        debug!("Running command: {command:?} {args:?}");
 
         let output = cmd
             .output()
-            .map_err(|e| Error::CommandFailed(format!("Failed to execute {}: {}", command, e)))?;
+            .map_err(|e| Error::CommandFailed(format!("Failed to execute {command}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
 
             if verbose {
-                eprintln!("Command failed: {} {:?}", command, args);
+                eprintln!("Command failed: {command} {args:?}");
                 eprintln!("Status: {}", output.status);
-                eprintln!("Stdout: {}", stdout);
-                eprintln!("Stderr: {}", stderr);
+                eprintln!("Stdout: {stdout}");
+                eprintln!("Stderr: {stderr}");
             }
 
             return Err(Error::CommandFailed(format!(

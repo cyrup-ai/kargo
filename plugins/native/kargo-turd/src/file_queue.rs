@@ -19,6 +19,7 @@ pub struct FileEntry {
 ///
 /// # Returns
 /// Vec<FileEntry> sorted by size descending
+#[must_use] 
 pub fn build_priority_queue(
     src_files: &[PathBuf],
     test_files: &[PathBuf],

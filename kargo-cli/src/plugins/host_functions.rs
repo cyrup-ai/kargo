@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Result;
-use extism::*;
+use extism::{host_fn, Error, Manifest, Plugin, UserData, PluginBuilder, ValType};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ host_fn!(log_fn(user_data: mpsc::Sender<HostFunctionRequest>; msg: String) {
     let tx = match tx.lock() {
         Ok(tx) => tx,
         Err(e) => {
-            eprintln!("Failed to lock tx mutex: {}", e);
+            eprintln!("Failed to lock tx mutex: {e}");
             return Ok(());
         }
     };
@@ -45,8 +45,8 @@ host_fn!(read_file_fn(user_data: mpsc::Sender<HostFunctionRequest>; path: String
     let tx = match tx.lock() {
         Ok(tx) => tx,
         Err(e) => {
-            eprintln!("Failed to lock tx mutex: {}", e);
-            return Err(Error::msg(format!("Failed to lock tx mutex: {}", e)));
+            eprintln!("Failed to lock tx mutex: {e}");
+            return Err(Error::msg(format!("Failed to lock tx mutex: {e}")));
         }
     };
     let (sx, rx) = oneshot::channel();

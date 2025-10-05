@@ -57,10 +57,11 @@ pub fn copy_file(src: &Path, dst: &Path) -> Result<(), Error> {
 
     fs::copy(src, dst)
         .map(|_| ())
-        .map_err(|e| Error::DocCopyFailed(format!("Failed to copy file: {}", e)))
+        .map_err(|e| Error::DocCopyFailed(format!("Failed to copy file: {e}")))
 }
 
 /// Check if a file exists
+#[must_use] 
 pub fn file_exists(path: &Path) -> bool {
     path.exists() && path.is_file()
 }

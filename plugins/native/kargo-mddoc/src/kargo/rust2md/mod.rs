@@ -20,6 +20,7 @@ pub struct DocGenerator {
 }
 
 impl DocGenerator {
+    #[must_use] 
     pub fn new(config: Config) -> Self {
         Self { config }
     }
@@ -37,7 +38,7 @@ impl DocGenerator {
             .extract_package_name(&content)
             .context("Failed to extract package name from Cargo.toml")?;
 
-        info!("Package name: {}", package_name);
+        info!("Package name: {package_name}");
 
         // 2. Run cargo rustdoc with nightly to generate JSON
         let json_path = self.run_cargo_doc(&package_name, crate_path)?;
@@ -106,13 +107,13 @@ impl DocGenerator {
 
         if !output.status.success() {
             let error_message = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("cargo rustdoc failed: {}", error_message));
+            return Err(anyhow::anyhow!("cargo rustdoc failed: {error_message}"));
         }
 
         // The JSON file is generated at target/doc/{package_name}.json
         let json_path = crate_path
             .join("target/doc")
-            .join(format!("{}.json", package_name));
+            .join(format!("{package_name}.json"));
 
         if !json_path.exists() {
             return Err(anyhow::anyhow!(
@@ -132,7 +133,7 @@ impl DocGenerator {
         let kb_root = env::var("KNOWLEDGE_BASE_ROOT_DIR").unwrap_or_else(|_| {
             warn!("KNOWLEDGE_BASE_ROOT_DIR not set, using default location");
             let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            format!("{}/knowledge_base", home)
+            format!("{home}/knowledge_base")
         });
 
         let output_path = PathBuf::from(kb_root)

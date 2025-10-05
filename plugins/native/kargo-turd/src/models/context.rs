@@ -1,10 +1,10 @@
 use serde::Serialize;
-use super::*;
+use super::{Violation, PanicPattern, TestInSrc, OrphanedModule, OrphanedMethod, UnusedDependency};
 
 /// Complete context object passed to minijinja templates
 ///
 /// This structure contains all information needed to render a task file for a single source file.
-/// Templates can access all fields directly via {{ field_name }} syntax.
+/// Templates can access all fields directly via {{ `field_name` }} syntax.
 ///
 /// See: [./prompt/VARIABLES.md](../../prompt/VARIABLES.md) for complete variable documentation
 #[derive(Debug, Serialize)]
@@ -39,6 +39,7 @@ impl TemplateContext {
     /// - tier1/ - Most critical (almost certainly stubbed code)
     /// - tier2/ - Medium priority
     /// - tier3/ - Low priority (might be false positives)
+    #[must_use] 
     pub fn highest_tier(&self) -> u8 {
         if !self.tier1_violations.is_empty() { 1 }
         else if !self.tier2_violations.is_empty() { 2 }

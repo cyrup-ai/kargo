@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::utils;
 use log::{debug, info};
 use rustdoc_types::{AssocItemConstraintKind, Term};
-use rustdoc_types::{Crate, Id, Item, ItemEnum};
+use rustdoc_types::{Attribute, Crate, Id, Item, ItemEnum, ReprKind};
 use rustdoc_types::{Enum, Struct, Union};
 use rustdoc_types::{Function, Impl, StructKind, Trait, VariantKind, Visibility};
 use rustdoc_types::{GenericArg, GenericArgs, Generics, Type};
@@ -40,6 +40,7 @@ pub fn convert_to_markdown(json_path: &Path) -> Result<PathBuf, Error> {
 }
 
 /// Convert a rustdoc JSON structure to Markdown
+#[must_use] 
 pub fn rustdoc_json_to_markdown(data: &Crate) -> String {
     let mut output = String::new();
 
@@ -47,7 +48,7 @@ pub fn rustdoc_json_to_markdown(data: &Crate) -> String {
     output.push_str("# Crate Documentation\n\n");
 
     if let Some(version) = &data.crate_version {
-        output.push_str(&format!("**Version:** {}\n\n", version));
+        output.push_str(&format!("**Version:** {version}\n\n"));
     }
 
     output.push_str(&format!("**Format Version:** {}\n\n", data.format_version));
@@ -63,14 +64,14 @@ pub fn rustdoc_json_to_markdown(data: &Crate) -> String {
             log::info!("Root module has {} direct items", module.items.len());
 
             if let Some(name) = &root_item.name {
-                output.push_str(&format!("# Module `{}`\n\n", name));
+                output.push_str(&format!("# Module `{name}`\n\n"));
             } else if module.is_crate {
                 output.push_str("# Crate Root\n\n");
             }
 
             // Add root documentation if available
             if let Some(docs) = &root_item.docs {
-                output.push_str(&format!("{}\n\n", docs));
+                output.push_str(&format!("{docs}\n\n"));
             }
 
             // Process all items in the module with consistent heading levels
@@ -98,7 +99,7 @@ fn process_items(output: &mut String, item_ids: &[Id], data: &Crate, level: usiz
     let mut _use_items: Vec<Id> = Vec::new(); // Separate category for use statements
     let mut other_items = Vec::new();
 
-    for id in item_ids.iter() {
+    for id in item_ids {
         if let Some(item) = data.index.get(id) {
             match &item.inner {
                 ItemEnum::Module(_) => modules.push(*id),
@@ -119,9 +120,6 @@ fn process_items(output: &mut String, item_ids: &[Id], data: &Crate, level: usiz
             }
         }
     }
-
-    // TODO: Show re-exports prominently once we figure out the correct rustdoc-types variant
-    // The JSON shows these as "use" items but the enum variant name varies by version
 
     // Process each group in order
     if !modules.is_empty() {
@@ -227,50 +225,62 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
                 Some(r) => r,
                 None => name,
             };
-            output.push_str(&format!("{} Extern Crate `{}`\n\n", heading, display_name));
+            output.push_str(&format!("{heading} Extern Crate `{display_name}`\n\n"));
+        }
+        ItemEnum::Use(use_item) => {
+            let display_name = if use_item.is_glob {
+                format!("{}::*", use_item.source)
+            } else if use_item.source.ends_with(&format!("::{}", use_item.name)) {
+                // Simple re-export: pub use foo::bar::MyType;
+                use_item.source.clone()
+            } else {
+                // Renamed re-export: pub use foo::bar::OldName as NewName;
+                format!("{} as {}", use_item.source, use_item.name)
+            };
+            output.push_str(&format!("{heading} Re-export `{display_name}`\n\n"));
         }
         _ => {
             // Handle all other items as before
             if let Some(name) = &item.name {
                 match &item.inner {
                     ItemEnum::Module(_) => {
-                        output.push_str(&format!("{} Module `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Module `{name}`\n\n"));
                     }
                     ItemEnum::Struct(_) => {
-                        output.push_str(&format!("{} Struct `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Struct `{name}`\n\n"));
                     }
                     ItemEnum::Enum(_) => {
-                        output.push_str(&format!("{} Enum `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Enum `{name}`\n\n"));
                     }
                     ItemEnum::Union(_) => {
-                        output.push_str(&format!("{} Union `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Union `{name}`\n\n"));
                     }
                     ItemEnum::Trait(_) => {
-                        output.push_str(&format!("{} Trait `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Trait `{name}`\n\n"));
                     }
                     ItemEnum::TraitAlias(_) => {
-                        output.push_str(&format!("{} Trait Alias `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Trait Alias `{name}`\n\n"));
                     }
                     ItemEnum::Function(_) => {
-                        log::debug!("Formatting function {} with heading level {}", name, level);
-                        output.push_str(&format!("{} Function `{}`\n\n", heading, name))
+                        log::debug!("Formatting function {name} with heading level {level}");
+                        output.push_str(&format!("{heading} Function `{name}`\n\n"));
                     }
                     ItemEnum::TypeAlias(_) => {
-                        output.push_str(&format!("{} Type Alias `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Type Alias `{name}`\n\n"));
                     }
                     ItemEnum::Constant { .. } => {
-                        output.push_str(&format!("{} Constant `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Constant `{name}`\n\n"));
                     }
                     ItemEnum::Static(_) => {
-                        output.push_str(&format!("{} Static `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Static `{name}`\n\n"));
                     }
                     ItemEnum::Macro(_) => {
-                        output.push_str(&format!("{} Macro `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Macro `{name}`\n\n"));
                     }
                     ItemEnum::ProcMacro(_) => {
-                        output.push_str(&format!("{} Procedural Macro `{}`\n\n", heading, name))
+                        output.push_str(&format!("{heading} Procedural Macro `{name}`\n\n"));
                     }
-                    _ => output.push_str(&format!("{} `{}`\n\n", heading, name)),
+                    _ => output.push_str(&format!("{heading} `{name}`\n\n")),
                 }
             } else {
                 // Special case for impl blocks and other nameless items
@@ -295,7 +305,7 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
                     }
                     _ => {
                         // For other items without names
-                        output.push_str(&format!("{} Unnamed Item\n\n", heading));
+                        output.push_str(&format!("{heading} Unnamed Item\n\n"));
                     }
                 }
             }
@@ -306,7 +316,7 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
     if !item.attrs.is_empty() {
         output.push_str("**Attributes:**\n\n");
         for attr in &item.attrs {
-            output.push_str(&format!("- `{}`\n", attr));
+            output.push_str(&format!("- `{}`\n", format_attribute(attr)));
         }
         output.push('\n');
     }
@@ -315,19 +325,19 @@ fn process_item(output: &mut String, item: &Item, data: &Crate, level: usize) {
     if let Some(deprecation) = &item.deprecation {
         output.push_str("**⚠️ Deprecated");
         if let Some(since) = &deprecation.since {
-            output.push_str(&format!(" since {}", since));
+            output.push_str(&format!(" since {since}"));
         }
         output.push_str("**");
 
         if let Some(note) = &deprecation.note {
-            output.push_str(&format!(": {}", note));
+            output.push_str(&format!(": {note}"));
         }
         output.push_str("\n\n");
     }
 
     // Add documentation if available
     if let Some(docs) = &item.docs {
-        output.push_str(&format!("{}\n\n", docs));
+        output.push_str(&format!("{docs}\n\n"));
     }
 
     // Add code block with item signature
@@ -353,7 +363,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
     match &item.visibility {
         Visibility::Public => output.push_str("pub "),
         Visibility::Crate => output.push_str("pub(crate) "),
-        Visibility::Restricted { path, .. } => output.push_str(&format!("pub(in {}) ", path)),
+        Visibility::Restricted { path, .. } => output.push_str(&format!("pub(in {path}) ")),
         Visibility::Default => {}
     }
 
@@ -361,12 +371,12 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
     match &item.inner {
         ItemEnum::Module(_) => {
             if let Some(name) = &item.name {
-                output.push_str(&format!("mod {} {{ /* ... */ }}", name));
+                output.push_str(&format!("mod {name} {{ /* ... */ }}"));
             }
         }
         ItemEnum::Struct(struct_) => {
             if let Some(name) = &item.name {
-                output.push_str(&format!("struct {}", name));
+                output.push_str(&format!("struct {name}"));
                 format_generics(output, &struct_.generics, data);
 
                 match &struct_.kind {
@@ -382,7 +392,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                                             Visibility::Public => output.push_str("pub "),
                                             Visibility::Crate => output.push_str("pub(crate) "),
                                             Visibility::Restricted { path, .. } => {
-                                                output.push_str(&format!("pub(in {}) ", path))
+                                                output.push_str(&format!("pub(in {path}) "));
                                             }
                                             Visibility::Default => {}
                                         }
@@ -416,7 +426,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                                             Visibility::Public => output.push_str("    pub "),
                                             Visibility::Crate => output.push_str("    pub(crate) "),
                                             Visibility::Restricted { path, .. } => {
-                                                output.push_str(&format!("    pub(in {}) ", path))
+                                                output.push_str(&format!("    pub(in {path}) "));
                                             }
                                             Visibility::Default => output.push_str("    "),
                                         }
@@ -469,7 +479,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         }
         ItemEnum::Union(union_) => {
             if let Some(name) = &item.name {
-                output.push_str(&format!("union {}", name));
+                output.push_str(&format!("union {name}"));
                 format_generics(output, &union_.generics, data);
                 output.push_str(" {\n");
 
@@ -481,7 +491,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
                                     Visibility::Public => output.push_str("    pub "),
                                     Visibility::Crate => output.push_str("    pub(crate) "),
                                     Visibility::Restricted { path, .. } => {
-                                        output.push_str(&format!("    pub(in {}) ", path))
+                                        output.push_str(&format!("    pub(in {path}) "));
                                     }
                                     Visibility::Default => output.push_str("    "),
                                 }
@@ -507,7 +517,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         }
         ItemEnum::TraitAlias(trait_alias) => {
             if let Some(name) = &item.name {
-                output.push_str(&format!("trait {}", name));
+                output.push_str(&format!("trait {name}"));
                 format_generics(output, &trait_alias.generics, data);
                 output.push_str(" = ");
                 format_trait_bounds(output, &trait_alias.params, data);
@@ -520,7 +530,7 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         }
         ItemEnum::TypeAlias(type_alias) => {
             if let Some(name) = &item.name {
-                output.push_str(&format!("type {}", name));
+                output.push_str(&format!("type {name}"));
                 format_generics(output, &type_alias.generics, data);
                 format_where_clause(output, &type_alias.generics.where_predicates, data);
                 output.push_str(&format!(" = {};", format_type(&type_alias.type_, data)));
@@ -529,16 +539,26 @@ fn format_item_signature(output: &mut String, item: &Item, data: &Crate) {
         ItemEnum::Macro(macro_body) => {
             if let Some(name) = &item.name {
                 output.push_str(&format!(
-                    "macro_rules! {} {{\n    /* {} */\n}}",
-                    name, macro_body
+                    "macro_rules! {name} {{\n    /* {macro_body} */\n}}"
                 ));
+            }
+        }
+        ItemEnum::Use(use_item) => {
+            if use_item.is_glob {
+                output.push_str(&format!("use {}::*;", use_item.source));
+            } else if use_item.source.ends_with(&format!("::{}", use_item.name)) {
+                // Simple re-export
+                output.push_str(&format!("use {};", use_item.source));
+            } else {
+                // Renamed re-export
+                output.push_str(&format!("use {} as {};", use_item.source, use_item.name));
             }
         }
         // Add more cases as needed for other item kinds
         _ => {
             // Default case for other item kinds
             if let Some(name) = &item.name {
-                output.push_str(&format!("/* {} */", name));
+                output.push_str(&format!("/* {name} */"));
             } else {
                 output.push_str("/* unnamed item */");
             }
@@ -560,7 +580,7 @@ fn format_generics(output: &mut String, generics: &Generics, data: &Crate) {
                 if !outlives.is_empty() {
                     output.push_str(": ");
                     for (j, lifetime) in outlives.iter().enumerate() {
-                        output.push_str(&format!("'{}", lifetime));
+                        output.push_str(&format!("'{lifetime}"));
                         if j < outlives.len() - 1 {
                             output.push_str(" + ");
                         }
@@ -593,7 +613,7 @@ fn format_generics(output: &mut String, generics: &Generics, data: &Crate) {
                     format_type(type_, data)
                 ));
                 if let Some(default_value) = default {
-                    output.push_str(&format!(" = {}", default_value));
+                    output.push_str(&format!(" = {default_value}"));
                 }
             }
         }
@@ -648,11 +668,11 @@ fn format_where_clause(
                 }
             }
             rustdoc_types::WherePredicate::LifetimePredicate { lifetime, outlives } => {
-                output.push_str(&format!("'{}", lifetime));
+                output.push_str(&format!("'{lifetime}"));
                 if !outlives.is_empty() {
                     output.push_str(": ");
                     for (j, lt) in outlives.iter().enumerate() {
-                        output.push_str(&format!("'{}", lt));
+                        output.push_str(&format!("'{lt}"));
                         if j < outlives.len() - 1 {
                             output.push_str(" + ");
                         }
@@ -715,7 +735,7 @@ fn format_trait_bounds(output: &mut String, bounds: &[rustdoc_types::GenericBoun
                 }
             }
             rustdoc_types::GenericBound::Outlives(lifetime) => {
-                output.push_str(&format!("'{}", lifetime));
+                output.push_str(&format!("'{lifetime}"));
             }
             // Handle other bound types if needed
             _ => output.push_str("/* unsupported bound */"),
@@ -724,6 +744,68 @@ fn format_trait_bounds(output: &mut String, bounds: &[rustdoc_types::GenericBoun
         if i < bounds.len() - 1 {
             output.push_str(" + ");
         }
+    }
+}
+
+/// Format an `AttributeRepr` into clean repr syntax
+fn format_repr(repr: &rustdoc_types::AttributeRepr) -> String {
+    let mut parts = Vec::new();
+
+    // Add the kind (C, transparent, etc.)
+    match repr.kind {
+        ReprKind::Rust => parts.push("Rust".to_string()),
+        ReprKind::C => parts.push("C".to_string()),
+        ReprKind::Transparent => parts.push("transparent".to_string()),
+        ReprKind::Simd => parts.push("simd".to_string()),
+    }
+
+    // Add align if present
+    if let Some(align) = repr.align {
+        parts.push(format!("align({align})"));
+    }
+
+    // Add packed if present
+    if let Some(packed) = repr.packed {
+        if packed == 1 {
+            parts.push("packed".to_string());
+        } else {
+            parts.push(format!("packed({packed})"));
+        }
+    }
+
+    // Add int discriminant if present (for enums)
+    if let Some(int) = &repr.int {
+        parts.push(int.clone());
+    }
+
+    parts.join(", ")
+}
+
+/// Format an attribute for documentation
+fn format_attribute(attr: &Attribute) -> String {
+    match attr {
+        Attribute::NonExhaustive => "#[non_exhaustive]".to_string(),
+        Attribute::MustUse { reason } => {
+            if let Some(r) = reason {
+                format!("#[must_use = \"{r}\"]")
+            } else {
+                "#[must_use]".to_string()
+            }
+        }
+        Attribute::MacroExport => "#[macro_export]".to_string(),
+        Attribute::ExportName(name) => format!("#[export_name = \"{name}\"]"),
+        Attribute::LinkSection(section) => format!("#[link_section = \"{section}\"]"),
+        Attribute::AutomaticallyDerived => "#[automatically_derived]".to_string(),
+        Attribute::Repr(repr) => format!("#[repr({})]", format_repr(repr)),
+        Attribute::NoMangle => "#[no_mangle]".to_string(),
+        Attribute::TargetFeature { enable } => {
+            let features = enable.iter()
+                .map(|f| format!("enable = \"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("#[target_feature({features})]")
+        }
+        Attribute::Other(s) => format!("#[{s}]"),
     }
 }
 
@@ -740,7 +822,7 @@ fn format_generic_args(output: &mut String, args: &GenericArgs, data: &Crate) {
             // Format args
             for (i, arg) in args.iter().enumerate() {
                 match arg {
-                    GenericArg::Lifetime(lifetime) => output.push_str(&format!("'{}", lifetime)),
+                    GenericArg::Lifetime(lifetime) => output.push_str(&format!("'{lifetime}")),
                     GenericArg::Type(type_) => output.push_str(&format_type(type_, data)),
                     GenericArg::Const(constant) => output.push_str(&constant.expr),
                     GenericArg::Infer => output.push('_'),
@@ -756,10 +838,12 @@ fn format_generic_args(output: &mut String, args: &GenericArgs, data: &Crate) {
                 output.push_str(&constraint.name);
 
                 // Format constraint args if present
-                let mut args_str = String::new();
-                format_generic_args(&mut args_str, &constraint.args, data);
-                if !args_str.is_empty() && args_str != "<>" {
-                    output.push_str(&args_str);
+                if let Some(args) = &constraint.args {
+                    let mut args_str = String::new();
+                    format_generic_args(&mut args_str, args, data);
+                    if !args_str.is_empty() && args_str != "<>" {
+                        output.push_str(&args_str);
+                    }
                 }
 
                 // In newer rustdoc-types, AssocItemConstraint has name, args, and binding
@@ -859,7 +943,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
 
             // Lifetime bound if present
             if let Some(lifetime) = &dyn_trait.lifetime {
-                output.push_str(&format!(" + '{}", lifetime));
+                output.push_str(&format!(" + '{lifetime}"));
             }
         }
         Type::Generic(name) => {
@@ -965,7 +1049,7 @@ fn format_type(ty: &Type, data: &Crate) -> String {
         } => {
             output.push('&');
             if let Some(lt) = lifetime {
-                output.push_str(&format!("'{} ", lt));
+                output.push_str(&format!("'{lt} "));
             }
             if *is_mutable {
                 output.push_str("mut ");
@@ -990,12 +1074,14 @@ fn format_type(ty: &Type, data: &Crate) -> String {
                 }
             }
 
-            output.push_str(&format!(">::{}", name));
+            output.push_str(&format!(">::{name}"));
 
-            let mut args_str = String::new();
-            format_generic_args(&mut args_str, args, data);
-            if args_str != "<>" && !args_str.is_empty() {
-                output.push_str(&args_str);
+            if let Some(args) = args {
+                let mut args_str = String::new();
+                format_generic_args(&mut args_str, args, data);
+                if args_str != "<>" && !args_str.is_empty() {
+                    output.push_str(&args_str);
+                }
             }
         }
         // Handle other types as needed
@@ -1068,7 +1154,7 @@ fn format_abi(output: &mut String, abi: &rustdoc_types::Abi) {
             }
         }
         rustdoc_types::Abi::Other(abi) => {
-            output.push_str(&format!("extern \"{}\" ", abi));
+            output.push_str(&format!("extern \"{abi}\" "));
         }
     }
 }
@@ -1091,7 +1177,7 @@ fn format_function_signature(output: &mut String, item: &Item, function: &Functi
 
     // Function name
     if let Some(name) = &item.name {
-        output.push_str(&format!("fn {}", name));
+        output.push_str(&format!("fn {name}"));
 
         // Generic parameters
         format_generics(output, &function.generics, data);
@@ -1136,14 +1222,14 @@ fn format_function_signature(output: &mut String, item: &Item, function: &Functi
 /// Format an enum signature
 fn format_enum_signature(output: &mut String, item: &Item, enum_: &Enum, data: &Crate) {
     if let Some(name) = &item.name {
-        output.push_str(&format!("enum {}", name));
+        output.push_str(&format!("enum {name}"));
         format_generics(output, &enum_.generics, data);
         output.push_str(" {\n");
 
         for variant_id in &enum_.variants {
             if let Some(variant_item) = data.index.get(variant_id) {
                 if let Some(variant_name) = &variant_item.name {
-                    output.push_str(&format!("    {}", variant_name));
+                    output.push_str(&format!("    {variant_name}"));
 
                     if let ItemEnum::Variant(variant) = &variant_item.inner {
                         match &variant.kind {
@@ -1229,7 +1315,7 @@ fn format_trait_signature(output: &mut String, item: &Item, trait_: &Trait, data
 
     // Trait definition
     if let Some(name) = &item.name {
-        output.push_str(&format!("trait {}", name));
+        output.push_str(&format!("trait {name}"));
         format_generics(output, &trait_.generics, data);
 
         // Trait bounds
@@ -1345,7 +1431,7 @@ fn process_struct_details(
                         }
                     }
                 } else {
-                    output.push_str(&format!("| {} | `private` | *Private field* |\n", i));
+                    output.push_str(&format!("| {i} | `private` | *Private field* |\n"));
                 }
             }
             output.push('\n');
@@ -1441,7 +1527,7 @@ fn process_struct_details(
                                     if let Some(docs) = &method_item.docs {
                                         if let Some(first_line) = docs.lines().next() {
                                             if !first_line.trim().is_empty() {
-                                                output.push_str(&format!("\n  {}", first_line));
+                                                output.push_str(&format!("\n  {first_line}"));
                                             }
                                         }
                                     }
@@ -1462,7 +1548,7 @@ fn process_struct_details(
                 "#".repeat(std::cmp::min(heading_level + 1, 6))
             ));
             for (trait_name, impls) in trait_impls {
-                output.push_str(&format!("- **{}**\n", trait_name));
+                output.push_str(&format!("- **{trait_name}**\n"));
                 for impl_id in &impls {
                     if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
@@ -1487,7 +1573,7 @@ fn process_struct_details(
                                             if let Some(first_line) = docs.lines().next() {
                                                 if !first_line.trim().is_empty() {
                                                     output
-                                                        .push_str(&format!("\n    {}", first_line));
+                                                        .push_str(&format!("\n    {first_line}"));
                                                 }
                                             }
                                         }
@@ -1530,7 +1616,7 @@ fn process_enum_details(
 
                 // Add variant docs if available
                 if let Some(docs) = &variant_item.docs {
-                    output.push_str(&format!("{}\n\n", docs));
+                    output.push_str(&format!("{docs}\n\n"));
                 }
 
                 if let ItemEnum::Variant(variant) = &variant_item.inner {
@@ -1568,8 +1654,7 @@ fn process_enum_details(
                                     }
                                 } else {
                                     output.push_str(&format!(
-                                        "| {} | `private` | *Private field* |\n",
-                                        i
+                                        "| {i} | `private` | *Private field* |\n"
                                     ));
                                 }
                             }
@@ -1677,7 +1762,7 @@ fn process_enum_details(
                                     if let Some(docs) = &method_item.docs {
                                         if let Some(first_line) = docs.lines().next() {
                                             if !first_line.trim().is_empty() {
-                                                output.push_str(&format!("\n  {}", first_line));
+                                                output.push_str(&format!("\n  {first_line}"));
                                             }
                                         }
                                     }
@@ -1698,7 +1783,7 @@ fn process_enum_details(
                 "#".repeat(trait_impl_level)
             ));
             for (trait_name, impls) in trait_impls {
-                output.push_str(&format!("- **{}**\n", trait_name));
+                output.push_str(&format!("- **{trait_name}**\n"));
                 for impl_id in &impls {
                     if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
@@ -1723,7 +1808,7 @@ fn process_enum_details(
                                             if let Some(first_line) = docs.lines().next() {
                                                 if !first_line.trim().is_empty() {
                                                     output
-                                                        .push_str(&format!("\n    {}", first_line));
+                                                        .push_str(&format!("\n    {first_line}"));
                                                 }
                                             }
                                         }
@@ -1825,14 +1910,14 @@ fn process_union_details(
                 "#".repeat(trait_impl_level)
             ));
             for (trait_name, impls) in trait_impls {
-                output.push_str(&format!("- **{}**\n", trait_name));
+                output.push_str(&format!("- **{trait_name}**\n"));
                 for impl_id in &impls {
                     if let Some(impl_item) = data.index.get(impl_id) {
                         if let ItemEnum::Impl(impl_) = &impl_item.inner {
                             for method_id in &impl_.items {
                                 if let Some(method_item) = data.index.get(method_id) {
                                     if let Some(name) = &method_item.name {
-                                        output.push_str(&format!("  - `{}`: ", name));
+                                        output.push_str(&format!("  - `{name}`: "));
                                         if let Some(docs) = &method_item.docs {
                                             let first_line: &str = docs.lines().next().unwrap_or_default();
                                             output.push_str(first_line);
@@ -1917,11 +2002,11 @@ fn process_trait_details(
                 for type_id in &assoc_types {
                     if let Some(type_item) = data.index.get(type_id) {
                         if let Some(name) = &type_item.name {
-                            output.push_str(&format!("- `{}`", name));
+                            output.push_str(&format!("- `{name}`"));
                             if let Some(docs) = &type_item.docs {
                                 if let Some(first_line) = docs.lines().next() {
                                     if !first_line.trim().is_empty() {
-                                        output.push_str(&format!(": {}", first_line));
+                                        output.push_str(&format!(": {first_line}"));
                                     }
                                 }
                             }
@@ -1940,11 +2025,11 @@ fn process_trait_details(
                 for const_id in &assoc_consts {
                     if let Some(const_item) = data.index.get(const_id) {
                         if let Some(name) = &const_item.name {
-                            output.push_str(&format!("- `{}`", name));
+                            output.push_str(&format!("- `{name}`"));
                             if let Some(docs) = &const_item.docs {
                                 if let Some(first_line) = docs.lines().next() {
                                     if !first_line.trim().is_empty() {
-                                        output.push_str(&format!(": {}", first_line));
+                                        output.push_str(&format!(": {first_line}"));
                                     }
                                 }
                             }
@@ -1963,11 +2048,11 @@ fn process_trait_details(
                 for method_id in &required_methods {
                     if let Some(method_item) = data.index.get(method_id) {
                         if let Some(name) = &method_item.name {
-                            output.push_str(&format!("- `{}`", name));
+                            output.push_str(&format!("- `{name}`"));
                             if let Some(docs) = &method_item.docs {
                                 if let Some(first_line) = docs.lines().next() {
                                     if !first_line.trim().is_empty() {
-                                        output.push_str(&format!(": {}", first_line));
+                                        output.push_str(&format!(": {first_line}"));
                                     }
                                 }
                             }
@@ -2001,7 +2086,7 @@ fn process_trait_details(
                         if let Some(docs) = &method_item.docs {
                             if let Some(first_line) = docs.lines().next() {
                                 if !first_line.trim().is_empty() {
-                                    output.push_str(&format!("\n  {}", first_line));
+                                    output.push_str(&format!("\n  {first_line}"));
                                 }
                             }
                         }
@@ -2118,7 +2203,7 @@ fn process_impl_details(
         output.push_str("The following methods are available through the trait but not explicitly implemented:\n\n");
 
         for provided_method in &impl_.provided_trait_methods {
-            output.push_str(&format!("- `{}`\n", provided_method));
+            output.push_str(&format!("- `{provided_method}`\n"));
         }
 
         output.push('\n');
@@ -2154,7 +2239,7 @@ fn process_impl_methods(output: &mut String, impl_id: Id, data: &Crate, _level: 
                             if let Some(docs) = &method_item.docs {
                                 if let Some(first_line) = docs.lines().next() {
                                     if !first_line.trim().is_empty() {
-                                        output.push_str(&format!("\n  {}", first_line));
+                                        output.push_str(&format!("\n  {first_line}"));
                                     }
                                 }
                             }

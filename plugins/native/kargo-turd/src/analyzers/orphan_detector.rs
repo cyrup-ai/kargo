@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use syn::visit::{self, Visit};
 use syn::ItemMod;
-use crate::models::*;
+use crate::models::{OrphanedModule, FunctionInfo, OrphanedMethod};
 use super::ast_analyzer::AnalysisResult;
 
 // ============================================================================
@@ -28,6 +28,7 @@ pub struct ModuleCollector<'a> {
 }
 
 impl<'a> ModuleCollector<'a> {
+    #[must_use] 
     pub fn new(file_content: &'a str, file_path: String) -> Self {
         Self {
             modules: Vec::new(),
@@ -37,7 +38,7 @@ impl<'a> ModuleCollector<'a> {
     }
 }
 
-impl<'ast, 'a> Visit<'ast> for ModuleCollector<'a> {
+impl<'ast> Visit<'ast> for ModuleCollector<'_> {
     fn visit_item_mod(&mut self, node: &'ast ItemMod) {
         let name = node.ident.to_string();
 
@@ -85,7 +86,7 @@ pub fn collect_module_declarations(
 
 /// Collect all module names used in import statements
 ///
-/// Extracts modules from: use foo::bar; use baz;
+/// Extracts modules from: use `foo::bar`; use baz;
 pub fn collect_module_uses(content: &str) -> anyhow::Result<HashSet<String>> {
     let ast = syn::parse_file(content)?;
     let mut uses = HashSet::new();
@@ -102,9 +103,9 @@ pub fn collect_module_uses(content: &str) -> anyhow::Result<HashSet<String>> {
 /// Recursively extract module names from use tree
 ///
 /// Examples:
-/// - use foo::bar::baz; → extracts: foo, bar, baz
-/// - use std::{fs, io}; → extracts: std, fs, io
-/// - use crate::models::*; → extracts: crate, models
+/// - use `foo::bar::baz`; → extracts: foo, bar, baz
+/// - use `std::{fs`, io}; → extracts: std, fs, io
+/// - use `crate::models::`*; → extracts: crate, models
 fn extract_used_modules(tree: &syn::UseTree, uses: &mut HashSet<String>) {
     match tree {
         syn::UseTree::Path(path) => {
@@ -139,8 +140,8 @@ fn extract_used_modules(tree: &syn::UseTree, uses: &mut HashSet<String>) {
 /// Accumulates function definitions and calls across entire project
 ///
 /// Two-phase usage:
-/// 1. Call add_file_analysis() for each file
-/// 2. Call find_orphaned_methods() to get orphans
+/// 1. Call `add_file_analysis()` for each file
+/// 2. Call `find_orphaned_methods()` to get orphans
 pub struct OrphanDetector {
     /// Maps function name to all locations where it's defined
     /// Vec because same name can exist in different modules
@@ -157,6 +158,7 @@ pub struct OrphanDetector {
 }
 
 impl OrphanDetector {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             all_function_defs: HashMap::new(),
@@ -186,7 +188,7 @@ impl OrphanDetector {
 
     /// Add module information from one file
     ///
-    /// Call this alongside add_file_analysis() during file processing
+    /// Call this alongside `add_file_analysis()` during file processing
     pub fn add_module_info(
         &mut self,
         decls: Vec<OrphanedModule>,
@@ -201,6 +203,7 @@ impl OrphanDetector {
     /// Find all orphaned methods after all files analyzed
     ///
     /// Returns orphans grouped by source file for task file generation
+    #[must_use] 
     pub fn find_orphaned_methods(&self) -> HashMap<String, Vec<OrphanedMethod>> {
         let mut orphans_by_file: HashMap<String, Vec<OrphanedMethod>> = HashMap::new();
 
@@ -229,6 +232,7 @@ impl OrphanDetector {
     /// Find all orphaned modules after all files analyzed
     ///
     /// Returns modules that are declared but never imported
+    #[must_use] 
     pub fn find_orphaned_modules(&self) -> Vec<OrphanedModule> {
         self.all_module_decls
             .iter()

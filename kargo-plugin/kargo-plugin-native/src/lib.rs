@@ -1,12 +1,27 @@
 use std::any::Any;
 
-/// Native plugin trait for kargo
+/// Native plugin trait for kargo (LEGACY - DO NOT USE)
 ///
-/// Implementations have full access to:
-/// - Direct memory access
-/// - OS resources (filesystem, network, etc.)  
-/// - Thread spawning and async runtimes
-/// - Shared memory between threads
+/// This trait is deprecated in favor of `PluginCommand` which provides proper async integration.
+///
+/// **Why deprecated:**
+/// - Synchronous `execute()` method encourages `Runtime::new()` + `block_on` anti-pattern
+/// - Not actually called by kargo-cli (dead interface)
+/// - `PluginCommand` provides better async integration with kargo's runtime
+///
+/// **Use `PluginCommand` instead:**
+/// ```ignore
+/// impl PluginCommand for MyPlugin {
+///     fn clap(&self) -> Command { /* ... */ }
+///     fn run(&self, ctx: ExecutionContext) -> BoxFuture {
+///         Box::pin(async move { /* ... */ })
+///     }
+/// }
+/// ```
+#[deprecated(
+    since = "0.2.0",
+    note = "Use PluginCommand trait instead. NativePlugin encourages block_on anti-pattern and is not called by kargo-cli."
+)]
 pub trait NativePlugin: Any + Send + Sync {
     /// Get the clap command definition for this plugin
     fn command(&self) -> clap::Command;
@@ -18,6 +33,10 @@ pub trait NativePlugin: Any + Send + Sync {
     /// - Use tokio/async-std/etc
     /// - Access filesystem/network/OS resources
     /// - Share memory between threads
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if plugin execution fails
     fn execute(&self, args: Vec<String>) -> Result<(), Box<dyn std::error::Error>>;
 
     /// Get plugin metadata

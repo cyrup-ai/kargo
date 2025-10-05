@@ -9,14 +9,23 @@ use crate::models::{Dependency, DependencyLocation, DependencyUpdate};
 use crate::types::UpdateOptions;
 
 // Pre-compile regex patterns
-// These patterns are hardcoded and valid, so panic on failure is acceptable (indicates a bug)
 static CARGO_SECTION_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"```cargo\n([\s\S]*?)```")
-        .expect("BUG: hardcoded cargo section regex pattern is invalid")
+    match Regex::new(r"```cargo\n([\s\S]*?)```") {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile hardcoded cargo section regex: {}", e);
+            std::process::exit(1);
+        }
+    }
 });
 static CARGO_DEPS_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"//\s*cargo-deps:\s*(.+)$")
-        .expect("BUG: hardcoded cargo deps regex pattern is invalid")
+    match Regex::new(r"//\s*cargo-deps:\s*(.+)$") {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile hardcoded cargo deps regex: {}", e);
+            std::process::exit(1);
+        }
+    }
 });
 
 /// Update dependencies in a cargo.toml file
@@ -54,7 +63,6 @@ pub async fn update_cargo_toml(
             }
             _ => {
                 // Skip non-cargo.toml updates
-                continue;
             }
         }
     }
@@ -114,7 +122,6 @@ pub async fn update_cargo_manifest_in_rust(
             }
             _ => {
                 // Skip non-manifest updates
-                continue;
             }
         }
     }
@@ -166,7 +173,7 @@ pub async fn update_rust_script(
                 updated_content =
                     update_rust_script_cargo_deps_line(&updated_content, line_range, update)?;
             }
-            _ => continue,
+            _ => {}
         }
     }
 
@@ -340,7 +347,7 @@ pub async fn update_markdown(
                     if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await
                         && version != latest
                     {
-                        let dummy_dep = Dependency {
+                        let original_dep = Dependency {
                             name: name.to_string(),
                             version: version.to_string(),
                             location: DependencyLocation::CargoTomlDirect,
@@ -350,7 +357,7 @@ pub async fn update_markdown(
                             name: name.to_string(),
                             from_version: version.to_string(),
                             to_version: latest,
-                            dependency: dummy_dep,
+                            dependency: original_dep,
                         });
                     }
                 }
@@ -373,7 +380,7 @@ pub async fn update_markdown(
                     if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await
                         && version != latest
                     {
-                        let dummy_dep = Dependency {
+                        let original_dep = Dependency {
                             name: name.to_string(),
                             version: version.to_string(),
                             location: DependencyLocation::CargoTomlDirect,
@@ -383,7 +390,7 @@ pub async fn update_markdown(
                             name: name.to_string(),
                             from_version: version.to_string(),
                             to_version: latest,
-                            dependency: dummy_dep,
+                            dependency: original_dep,
                         });
                     }
                 }
@@ -489,7 +496,7 @@ pub async fn update_markdown(
         }
 
         // Also handle format without quotes: name=version
-        let bare_regex = Regex::new(r#"(\w+)=([^\s,]+)"#)?;
+        let bare_regex = Regex::new(r"(\w+)=([^\s,]+)")?;
         for cap in bare_regex.captures_iter(deps_str) {
             let name = cap
                 .get(1)
@@ -545,12 +552,12 @@ pub async fn update_markdown(
             if let Ok(Some(latest)) = get_latest_version(name, allow_prerelease).await {
                 // Replace bare dependency with versioned one
                 let bare_dep_pattern = format!(r"(?:^|,)\s*{}(?:\s*,|$)", regex::escape(name));
-                let bare_dep_regex = Regex::new(&bare_dep_pattern)?;
+                let single_bare_dep_regex = Regex::new(&bare_dep_pattern)?;
 
                 // Determine the replacement based on context
                 if deps_str.contains('=') {
                     // Other deps have versions, match that format
-                    updated_deps = bare_dep_regex
+                    updated_deps = single_bare_dep_regex
                         .replace(
                             &updated_deps,
                             format!(r#", {} = "{}", "#, name, latest).as_str(),
@@ -558,7 +565,7 @@ pub async fn update_markdown(
                         .to_string();
                 } else {
                     // This might be the only dep or all are bare
-                    updated_deps = bare_dep_regex
+                    updated_deps = single_bare_dep_regex
                         .replace(&updated_deps, format!(r#"{}="{}""#, name, latest).as_str())
                         .to_string();
                 }

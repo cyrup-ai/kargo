@@ -6,23 +6,37 @@ use toml_edit::DocumentMut as Document;
 use crate::models::{Dependency, DependencyLocation, DependencyParser, DependencySource};
 
 // Regular expressions for parsing rust-script files
-// These patterns are hardcoded and valid, so unwrap is safe during initialization
 // Regex to find embedded cargo TOML sections
 // Supports both: //! ```cargo format and standalone ```cargo format
 static CARGO_SECTION_DOC_COMMENT_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"//!\s*```cargo\s*\n((?://!.*\n)*?)//!\s*```")
-        .expect("BUG: hardcoded cargo doc comment section regex pattern is invalid")
+    match Regex::new(r"//!\s*```cargo\s*\n((?://!.*\n)*?)//!\s*```") {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile hardcoded cargo doc comment section regex: {}", e);
+            std::process::exit(1);
+        }
+    }
 });
 
 static CARGO_SECTION_STANDALONE_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"```cargo\s*\n((?:.*\n)*?)```")
-        .expect("BUG: hardcoded cargo standalone section regex pattern is invalid")
+    match Regex::new(r"```cargo\s*\n((?:.*\n)*?)```") {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile hardcoded cargo standalone section regex: {}", e);
+            std::process::exit(1);
+        }
+    }
 });
 
 // Regex to find cargo-deps inline format
 static CARGO_DEPS_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)//\s*cargo-deps:\s*(.+)$")
-        .expect("BUG: hardcoded cargo deps regex pattern is invalid")
+    match Regex::new(r"(?m)//\s*cargo-deps:\s*(.+)$") {
+        Ok(re) => re,
+        Err(e) => {
+            eprintln!("FATAL: Failed to compile hardcoded cargo deps regex: {}", e);
+            std::process::exit(1);
+        }
+    }
 });
 
 /// Parser for Rust script files

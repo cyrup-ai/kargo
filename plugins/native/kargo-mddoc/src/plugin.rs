@@ -112,14 +112,12 @@ impl PluginCommand for MddocPlugin {
             let package_name = package_spec.split('@').next().unwrap_or(&package_spec);
 
             let output_dir = matches
-                .get_one::<String>("output")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("./docs").join(package_name));
+                .get_one::<String>("output").map_or_else(|| PathBuf::from("./docs").join(package_name), PathBuf::from);
             let temp_dir = matches.get_one::<String>("temp-dir").map(PathBuf::from);
             let keep_temp = matches.get_flag("keep-temp");
             let skip_component_check = matches.get_flag("skip-component-check");
             let document_private_items = matches.get_flag("document-private-items");
-            let _keep_json = matches.get_flag("keep-json");
+            let keep_json = matches.get_flag("keep-json");
             let json_only = matches.get_flag("json-only");
             let multipage = matches.get_flag("multipage");
             let base_url = matches
@@ -147,7 +145,9 @@ impl PluginCommand for MddocPlugin {
             let json_path = generator.run()?;
 
             // By default, we generate Markdown unless json_only is specified
-            if !json_only {
+            if json_only {
+                log::info!("JSON documentation generated at: {}", json_path.display());
+            } else {
                 if multipage {
                     log::debug!("Converting JSON to multi-page Markdown");
                     let multipage_config = crate::multipage_markdown::MultipageConfig {
@@ -175,15 +175,12 @@ impl PluginCommand for MddocPlugin {
                 }
 
                 // Clean up JSON files if not needed
-                // TODO: UNCOMMENT THIS AFTER DEBUGGING IS COMPLETE
-                // if !keep_json {
-                //     log::debug!("Removing intermediate JSON file");
-                //     if let Err(e) = std::fs::remove_file(&json_path) {
-                //         log::debug!("Failed to remove JSON file: {}", e);
-                //     }
-                // }
-            } else {
-                log::info!("JSON documentation generated at: {}", json_path.display());
+                if !keep_json {
+                    log::debug!("Removing intermediate JSON file");
+                    if let Err(e) = std::fs::remove_file(&json_path) {
+                        log::debug!("Failed to remove JSON file: {e}");
+                    }
+                }
             }
 
             Ok(())

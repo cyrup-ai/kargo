@@ -150,27 +150,41 @@ fn main() {
     let parser = RustScriptParser;
     let dependencies = parser.parse(&source)?;
 
-    // Verify the results
-    assert_eq!(dependencies.len(), 3);
+    // Verify the results - parser correctly extracts all dependencies
+    assert_eq!(dependencies.len(), 3, "Expected 3 dependencies from cargo-deps line");
 
-    // Check for specific dependencies
+    // Verify anyhow dependency
     let anyhow_dep = dependencies
         .iter()
         .find(|d| d.name == "anyhow")
-        .expect("TEST FAILURE: 'anyhow' dependency not found");
+        .expect("anyhow dependency should be found");
     assert_eq!(anyhow_dep.version, "1.0.0");
+    assert!(matches!(
+        anyhow_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
 
+    // Verify tokio dependency
     let tokio_dep = dependencies
         .iter()
         .find(|d| d.name == "tokio")
-        .expect("TEST FAILURE: 'tokio' dependency not found");
+        .expect("tokio dependency should be found");
     assert_eq!(tokio_dep.version, "1.0.0");
+    assert!(matches!(
+        tokio_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
 
+    // Verify regex dependency (bare name without version)
     let regex_dep = dependencies
         .iter()
         .find(|d| d.name == "regex")
-        .expect("TEST FAILURE: 'regex' dependency not found");
-    assert_eq!(regex_dep.version, "*");
+        .expect("regex dependency should be found");
+    assert_eq!(regex_dep.version, "*", "Bare dependency name should have wildcard version");
+    assert!(matches!(
+        regex_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
 
     Ok(())
 }

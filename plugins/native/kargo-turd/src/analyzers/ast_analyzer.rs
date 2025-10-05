@@ -3,7 +3,7 @@ use syn::{Expr, ExprMethodCall, ItemFn, Attribute};
 use std::collections::{HashMap, HashSet};
 use quote::ToTokens;
 use proc_macro2::Span;
-use crate::models::*;
+use crate::models::{PanicPattern, TestInSrc, FunctionInfo};
 
 // ============================================================================
 // CONTEXT EXTRACTION UTILITY
@@ -11,7 +11,7 @@ use crate::models::*;
 
 /// Extract context: 2 lines before + violation line + 2 lines after
 ///
-/// Same function from pattern_matcher - could be extracted to utils
+/// Same function from `pattern_matcher` - could be extracted to utils
 fn extract_context(content: &str, line_num: usize) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let start = line_num.saturating_sub(2);
@@ -23,11 +23,11 @@ fn extract_context(content: &str, line_num: usize) -> String {
 // PANIC PATTERN VISITOR - Detects .unwrap() and .expect() calls
 // ============================================================================
 
-/// Visitor that finds all .unwrap() and .expect() method calls
+/// Visitor that finds all .`unwrap()` and .`expect()` method calls
 ///
 /// Different rules for src/ vs tests/:
-/// - src/: Both unwrap() and expect() are violations (can panic in production)
-/// - tests/: Only unwrap() is violation (should use expect() with messages)
+/// - src/: Both `unwrap()` and `expect()` are violations (can panic in production)
+/// - tests/: Only `unwrap()` is violation (should use `expect()` with messages)
 pub struct PanicPatternVisitor<'a> {
     pub unwrap_calls: Vec<PanicPattern>,
     pub expect_calls: Vec<PanicPattern>,
@@ -36,6 +36,7 @@ pub struct PanicPatternVisitor<'a> {
 }
 
 impl<'a> PanicPatternVisitor<'a> {
+    #[must_use] 
     pub fn new(file_content: &'a str, is_test_file: bool) -> Self {
         Self {
             unwrap_calls: Vec::new(),
@@ -47,10 +48,10 @@ impl<'a> PanicPatternVisitor<'a> {
 }
 
 /// Implement Visit trait to walk AST and find method calls
-impl<'ast, 'a> Visit<'ast> for PanicPatternVisitor<'a> {
+impl<'ast> Visit<'ast> for PanicPatternVisitor<'_> {
     /// Called for every method call in the AST
     ///
-    /// Examples: foo.unwrap(), bar.expect("msg"), baz.unwrap_or_default()
+    /// Examples: `foo.unwrap()`, bar.expect("msg"), `baz.unwrap_or_default()`
     fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
         let method = node.method.to_string();
 
@@ -96,7 +97,7 @@ impl<'ast, 'a> Visit<'ast> for PanicPatternVisitor<'a> {
 
 /// Visitor that finds test attributes in source files
 ///
-/// Detects: #[test], #[tokio::test], #[rstest], #[cfg(test)]
+/// Detects: #[test], #[`tokio::test`], #[rstest], #[cfg(test)]
 pub struct TestAttributeVisitor<'a> {
     pub tests_found: Vec<TestInSrc>,
     file_content: &'a str,
@@ -104,6 +105,7 @@ pub struct TestAttributeVisitor<'a> {
 }
 
 impl<'a> TestAttributeVisitor<'a> {
+    #[must_use] 
     pub fn new(file_content: &'a str, file_path: String) -> Self {
         Self {
             tests_found: Vec::new(),
@@ -130,7 +132,7 @@ impl<'a> TestAttributeVisitor<'a> {
 
                 self.tests_found.push(TestInSrc {
                     line_number: line + 1,
-                    test_attribute: format!("#[{}]", attr_str),
+                    test_attribute: format!("#[{attr_str}]"),
                     file_path: self.file_path.clone(),
                     context: extract_context(self.file_content, line),
                 });
@@ -147,7 +149,7 @@ impl<'a> TestAttributeVisitor<'a> {
     }
 }
 
-impl<'ast, 'a> Visit<'ast> for TestAttributeVisitor<'a> {
+impl<'ast> Visit<'ast> for TestAttributeVisitor<'_> {
     /// Check function attributes for test markers
     fn visit_item_fn(&mut self, node: &'ast ItemFn) {
         self.check_for_test_attribute(&node.attrs, node.sig.ident.span());
@@ -172,6 +174,7 @@ pub struct FunctionCollector<'a> {
 }
 
 impl<'a> FunctionCollector<'a> {
+    #[must_use] 
     pub fn new(file_content: &'a str) -> Self {
         Self {
             functions: HashMap::new(),
@@ -180,7 +183,7 @@ impl<'a> FunctionCollector<'a> {
     }
 }
 
-impl<'ast, 'a> Visit<'ast> for FunctionCollector<'a> {
+impl<'ast> Visit<'ast> for FunctionCollector<'_> {
     fn visit_item_fn(&mut self, node: &'ast ItemFn) {
         let name = node.sig.ident.to_string();
 
@@ -264,6 +267,7 @@ pub struct FunctionCallCollector {
 }
 
 impl FunctionCallCollector {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             calls: HashSet::new(),
@@ -280,7 +284,7 @@ impl Default for FunctionCallCollector {
 impl<'ast> Visit<'ast> for FunctionCallCollector {
     /// Called for every function call (not method call)
     ///
-    /// Example: foo(), bar::baz()
+    /// Example: `foo()`, `bar::baz()`
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         // Extract function name from call expression
         if let Expr::Path(ref path_expr) = *node.func {
@@ -318,7 +322,7 @@ pub struct AnalysisResult {
 
 /// Analyze a Rust source file using AST parsing
 ///
-/// Returns violations found via syn::visit traversal
+/// Returns violations found via `syn::visit` traversal
 ///
 /// # Errors
 /// Returns error if file content is not valid Rust syntax
@@ -330,7 +334,7 @@ pub fn analyze_file(
     // Parse file content into AST
     // This is the expensive operation (~10ms for 1000-line file)
     let ast = syn::parse_file(content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", file_path, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse {file_path}: {e}"))?;
 
     // Run panic pattern visitor
     let mut panic_visitor = PanicPatternVisitor::new(content, is_test_file);
@@ -341,12 +345,12 @@ pub fn analyze_file(
     panic_patterns.extend(panic_visitor.expect_calls);
 
     // Run test attribute visitor (only for src files)
-    let tests_in_src = if !is_test_file {
+    let tests_in_src = if is_test_file {
+        Vec::new()
+    } else {
         let mut test_visitor = TestAttributeVisitor::new(content, file_path.to_string());
         test_visitor.visit_file(&ast);
         test_visitor.tests_found
-    } else {
-        Vec::new()
     };
 
     // Collect function definitions

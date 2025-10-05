@@ -49,12 +49,12 @@ async fn main() -> Result<()> {
     println!("Found {} Cargo.toml files", cargo_toml_paths.len());
 
     // Take only the first 10 projects for testing
-    let limited_paths = cargo_toml_paths.into_iter().take(10).collect();
+    let limited_paths: Vec<_> = cargo_toml_paths.into_iter().take(10).collect();
     println!("Limited to 10 projects for testing");
 
     // Step 2: Extract project information in parallel
     let mp = MultiProgress::new();
-    let projects = extract_project_info(limited_paths, &mp)?;
+    let projects = extract_project_info(&limited_paths, &mp)?;
 
     // Step 3: Check project status concurrently
     let projects = check_project_status(projects).await?;
@@ -79,7 +79,7 @@ fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
         .follow_links(true)
         .parallelism(jwalk::Parallelism::RayonNewPool(0)) // Use available cores
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
         if path.file_name().is_some_and(|f| f == "Cargo.toml") {
@@ -95,7 +95,7 @@ fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn extract_project_info(
-    cargo_toml_paths: Vec<PathBuf>,
+    cargo_toml_paths: &[PathBuf],
     mp: &MultiProgress,
 ) -> Result<Vec<ProjectInfo>> {
     println!("Extracting project information...");
@@ -120,10 +120,10 @@ fn extract_project_info(
         if let Ok(info) = project_info {
             match projects.lock() {
                 Ok(mut proj) => proj.push(info),
-                Err(e) => eprintln!("Failed to lock projects mutex: {}", e),
+                Err(e) => eprintln!("Failed to lock projects mutex: {e}"),
             }
         } else {
-            println!("Warning: Failed to extract info from {:?}", path);
+            println!("Warning: Failed to extract info from {path:?}");
         }
 
         pb.inc(1);
@@ -134,7 +134,7 @@ fn extract_project_info(
     match Arc::try_unwrap(projects) {
         Ok(mutex) => match mutex.into_inner() {
             Ok(data) => Ok(data),
-            Err(e) => Err(anyhow!("Failed to extract data from mutex: {}", e)),
+            Err(e) => Err(anyhow!("Failed to extract data from mutex: {e}")),
         },
         Err(_) => Err(anyhow!(
             "Failed to unwrap Arc - still has multiple references"
@@ -144,17 +144,17 @@ fn extract_project_info(
 
 fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
     let manifest = Manifest::from_path(path)
-        .with_context(|| format!("Failed to parse Cargo.toml at {:?}", path))?;
+        .with_context(|| format!("Failed to parse Cargo.toml at {}", path.display()))?;
 
     let package = manifest
         .package
         .as_ref()
-        .with_context(|| format!("No package section in {:?}", path))?;
+        .with_context(|| format!("No package section in {}", path.display()))?;
 
     let dependencies = manifest
         .dependencies
         .keys()
-        .map(|k| k.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     // Handle workspace members
@@ -195,10 +195,7 @@ fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
 }
 
 fn determine_project_type(cargo_toml_path: &Path) -> ProjectType {
-    let parent_dir = match cargo_toml_path.parent() {
-        Some(dir) => dir,
-        None => return ProjectType::Unknown,
-    };
+    let Some(parent_dir) = cargo_toml_path.parent() else { return ProjectType::Unknown };
 
     let has_main = parent_dir.join("src/main.rs").exists();
     let has_lib = parent_dir.join("src/lib.rs").exists();
@@ -227,7 +224,7 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
             let _permit = match semaphore.acquire().await {
                 Ok(permit) => permit,
                 Err(e) => {
-                    eprintln!("Failed to acquire semaphore: {}", e);
+                    eprintln!("Failed to acquire semaphore: {e}");
                     return;
                 }
             };
@@ -238,7 +235,7 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
 
             match updated_projects.lock() {
                 Ok(mut proj) => proj.push(updated_project),
-                Err(e) => eprintln!("Failed to lock updated_projects mutex: {}", e),
+                Err(e) => eprintln!("Failed to lock updated_projects mutex: {e}"),
             }
         });
 
@@ -253,7 +250,7 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
     match Arc::try_unwrap(updated_projects) {
         Ok(mutex) => match mutex.into_inner() {
             Ok(data) => Ok(data),
-            Err(e) => Err(anyhow!("Failed to extract data from mutex: {}", e)),
+            Err(e) => Err(anyhow!("Failed to extract data from mutex: {e}")),
         },
         Err(_) => Err(anyhow!(
             "Failed to unwrap Arc - still has multiple references"

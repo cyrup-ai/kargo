@@ -56,6 +56,7 @@ impl Default for SapCommand {
 }
 
 impl SapCommand {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -105,13 +106,12 @@ impl PluginCommand for SapCommand {
 impl SapCommand {
     async fn run_async(&self, ctx: ExecutionContext) -> Result<()> {
         // Parse arguments from the execution context
-        let args: Vec<&str> = ctx.matched_args.iter().map(|s| s.as_str()).collect();
+        let args: Vec<&str> = ctx.matched_args.iter().map(std::string::String::as_str).collect();
         let matches = self.clap().try_get_matches_from(args)?;
 
         let path = matches
             .get_one::<String>("path")
-            .map(|s| s.as_str())
-            .unwrap_or(".");
+            .map_or(".", std::string::String::as_str);
 
         let objective = matches.get_one::<String>("objective");
         let context = matches.get_one::<String>("context");
@@ -136,10 +136,10 @@ impl SapCommand {
         if objective.is_some() || context.is_some() {
             println!("🤖 Smart Agent Protocol - Focused Directory Listing");
             if let Some(obj) = objective {
-                println!("📎 Objective: {}", obj);
+                println!("📎 Objective: {obj}");
             }
             if let Some(ctx) = context {
-                println!("📝 Context: {}", ctx);
+                println!("📝 Context: {ctx}");
             }
             println!();
         }
@@ -159,7 +159,7 @@ impl SapCommand {
         for entry in WalkDir::new(path)
             .max_depth(1)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .skip(1)
         // Skip the directory itself
         {
@@ -177,7 +177,7 @@ impl SapCommand {
             let metadata = entry.metadata()?;
             entries.push(FileEntry {
                 name: name.to_string(),
-                path: path.to_path_buf(),
+                path: path.clone(),
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
             });
@@ -225,7 +225,7 @@ impl SapCommand {
         let user_prompt = format!(
             "Objective: {}\n\n{}\n\nFiles:\n{}\n\nReturn relevance scores as JSON.",
             objective,
-            context.map(|c| format!("Context: {}", c)).unwrap_or_default(),
+            context.map(|c| format!("Context: {c}")).unwrap_or_default(),
             file_list.join("\n")
         );
 
@@ -253,7 +253,7 @@ impl SapCommand {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await?;
-            anyhow::bail!("API request failed ({}): {}", status, text);
+            anyhow::bail!("API request failed ({status}): {text}");
         }
 
         let api_response: AnthropicResponse = response.json().await?;
@@ -367,7 +367,7 @@ impl SapCommand {
                 filtered
             }
             Err(e) => {
-                log::warn!("LLM analysis failed ({}), using basic filtering", e);
+                log::warn!("LLM analysis failed ({e}), using basic filtering");
                 self.apply_basic_filters(entries)
             }
         }

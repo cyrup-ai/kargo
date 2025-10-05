@@ -35,6 +35,7 @@ impl PluginBuilder {
         self.about = Some(txt.into());
         self
     }
+    #[must_use] 
     pub fn arg(mut self, a: Arg) -> Self {
         self.args.push(a);
         self
@@ -97,11 +98,11 @@ impl PluginBuilder {
                     drop(stdout_buf);
 
                     // print back what we captured
-                    print!("{}", out);
+                    print!("{out}");
                     result?;
 
                     // now run pattern matches
-                    for idx in set.matches(&out).into_iter() {
+                    for idx in set.matches(&out) {
                         let re = &regs[idx];
                         let cb = &cbs[idx];
                         for m in re.find_iter(&out) {
@@ -140,12 +141,5 @@ impl PluginBuilder {
             regs,
             cbs,
         }))
-    }
-
-    /// Build the plugin command, panicking on error.
-    /// This is for backward compatibility with the macro.
-    pub fn build_or_panic(self) -> Box<dyn PluginCommand> {
-        self.build()
-            .unwrap_or_else(|e| panic!("Failed to build plugin: {}", e))
     }
 }

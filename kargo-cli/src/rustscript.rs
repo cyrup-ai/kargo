@@ -6,10 +6,11 @@ use tokio::fs;
 use toml_edit::DocumentMut;
 
 use crate::project::CargoSection;
-// TODO: These should use kargo-upgrade when integrated
-// use kargo_upgrade::crates_io::get_latest_version;
-// use kargo_upgrade::models::Dependency;
-// use kargo_upgrade::types::DependencyUpdate;
+use kargo_upgrade::models::{DependencyParser, DependencySource, DependencyUpdate, DependencyUpdater, DependencyWriter};
+use kargo_upgrade::parsers::RustScriptParser;
+use kargo_upgrade::types::UpdateOptions;
+use kargo_upgrade::updater::CratesIoUpdater;
+use kargo_upgrade::writers::RustScriptWriter;
 
 /// Structure representing a Rust script with cargo dependencies
 pub struct RustScript {
@@ -20,11 +21,11 @@ pub struct RustScript {
     /// Extracted dependencies
     pub dependencies: HashMap<String, String>,
     /// Original file content
-    _content: String,
+    pub content: String,
 }
 
 impl RustScript {
-    /// Create a new RustScript instance by parsing a file
+    /// Create a new `RustScript` instance by parsing a file
     pub async fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let content = fs::read_to_string(&path).await?;
@@ -35,7 +36,7 @@ impl RustScript {
             path,
             sections,
             dependencies,
-            _content: content,
+            content,
         })
     }
 
@@ -103,7 +104,7 @@ impl RustScript {
         if let Some(deps) = doc.get("dependencies")
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, value) in deps_table.iter() {
+            for (key, value) in deps_table {
                 // Extract version based on format
                 if let Some(version) = extract_version(value) {
                     dependencies.insert(key.to_string(), version);
@@ -115,7 +116,7 @@ impl RustScript {
         if let Some(deps) = doc.get("dev-dependencies")
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, value) in deps_table.iter() {
+            for (key, value) in deps_table {
                 // Extract version based on format
                 if let Some(version) = extract_version(value) {
                     dependencies.insert(key.to_string(), version);
@@ -151,99 +152,83 @@ impl RustScript {
         Ok(())
     }
 
-    /* TODO: Uncomment when kargo-upgrade is integrated
-    /// Update dependencies to their latest versions
+    /// Update dependencies to their latest versions using kargo-upgrade
+    ///
+    /// This method:
+    /// 1. Creates a `DependencySource` from the rust script
+    /// 2. Parses dependencies using `RustScriptParser`
+    /// 3. Updates to latest versions using `CratesIoUpdater`
+    /// 4. Writes changes back using `RustScriptWriter`
+    ///
+    /// Returns a Vec of `DependencyUpdate` describing what was updated
     pub async fn update_dependencies(&mut self) -> Result<Vec<DependencyUpdate>> {
+        // Create a dependency source from the current rust script
+        let mut source = DependencySource::RustScript {
+            path: self.path.clone(),
+            content: self.content.clone(),
+        };
+
+        // Parse dependencies from the rust script
+        let parser = RustScriptParser;
+        let dependencies = parser.parse(&source)?;
+
+        if dependencies.is_empty() {
+            // No dependencies to update
+            return Ok(Vec::new());
+        }
+
+        // Configure update options
+        let options = UpdateOptions {
+            update_workspace: false, // Rust scripts don't have workspaces
+            compatible_only: true,    // Respect semver, skip major version bumps
+        };
+
+        // Create updater for getting latest versions from crates.io
+        let updater = CratesIoUpdater::new(options);
+
+        // Update all dependencies concurrently
         let mut updates = Vec::new();
-        let mut updated_content = self.content.clone();
-
-        // Process each cargo section
-        for section in &self.sections {
-            let mut section_content = section.content.clone();
-            let mut section_updates = Vec::new();
-
-            // Update dependencies
-            for (name, current_version) in &self.dependencies {
-                // Get the latest version from crates.io
-                if let Some(latest_version) = get_latest_version(name).await? {
-                    // Skip if already at latest version
-                    if current_version == &latest_version {
-                        continue;
-                    }
-
-                    // Create a dummy dependency to use with the update
-                    let dummy_dep = Dependency {
-                        name: name.clone(),
-                        version: current_version.clone(),
-                        location: crate::up2date::models::DependencyLocation::RustScriptCargo {
-                            section_range: (0, 0),
-                        },
-                    };
-
-                    // Add to updates
-                    section_updates.push(DependencyUpdate {
-                        name: name.clone(),
-                        from_version: current_version.clone(),
-                        to_version: latest_version.clone(),
-                        dependency: dummy_dep,
-                    });
-
-                    // Update in section content - handle different formats
-                    update_dependency_in_content(
-                        name,
-                        current_version,
-                        &latest_version,
-                        &mut section_content,
-                    );
-                }
-            }
-
-            // If we have updates in this section, apply them to the file content
-            if !section_updates.is_empty() {
-                // Create the updated cargo section
-                let original_section = &self.content[section.start..section.end];
-
-                // Replace in the file content, handling comment-based sections
-                if original_section.contains("//!") {
-                    // Doc comment format
-                    let doc_regex = Regex::new(r"^")?;
-                    let updated_section =
-                        doc_regex.replace_all(&section_content, "//! ").to_string();
-                    updated_content.replace_range(section.start..section.end, &updated_section);
-                } else if original_section.contains("//") {
-                    // Line comment format
-                    let line_regex = Regex::new(r"^")?;
-                    let updated_section =
-                        line_regex.replace_all(&section_content, "// ").to_string();
-                    updated_content.replace_range(section.start..section.end, &updated_section);
-                } else {
-                    // Standard format
-                    updated_content.replace_range(section.start..section.end, &section_content);
-                }
-
-                // Add updates to the result
-                updates.extend(section_updates);
+        for dep in dependencies {
+            // Get the update for this dependency
+            let update_result = updater.update(&dep).await;
+            
+            if let Ok(Some(update)) = update_result {
+                updates.push(update);
             }
         }
 
-        // If we made updates, write the changes back to disk
-        if !updates.is_empty() {
-            fs::write(&self.path, &updated_content).await?;
-            self.content = updated_content.clone();
+        if updates.is_empty() {
+            // All dependencies already at latest versions
+            return Ok(Vec::new());
         }
+
+        // Apply updates to the source
+        let writer = RustScriptWriter;
+        writer.apply_updates(&mut source, &updates)?;
+
+        // Write the updated content back to disk
+        let write_future = writer.write(&source)?;
+        write_future.await?;
+
+        // Update our internal content to match what was written
+        self.content = source.content().to_string();
+
+        // Re-parse to update our sections and dependencies
+        let (sections, dependencies) = Self::parse_cargo_sections(&self.content)?;
+        self.sections = sections;
+        self.dependencies = dependencies;
 
         Ok(updates)
     }
-    */
 }
 
 /// Extract version from a TOML value
 fn extract_version(value: &toml_edit::Item) -> Option<String> {
     match value {
-        toml_edit::Item::Value(value) => value.as_str().map(|version| version.to_string()),
+        toml_edit::Item::Value(value) => value.as_str().map(std::string::ToString::to_string),
         toml_edit::Item::Table(table) => table
             .get("version")
-            .and_then(|version| version.as_str().map(|version_str| version_str.to_string())),
+            .and_then(|version| version.as_str().map(std::string::ToString::to_string)),
         _ => None,
     }
 }

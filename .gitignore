@@ -12,6 +12,7 @@
 *.dll
 *.exe
 .idea
+task/*
 
 # ==============================
 # Rust Specific

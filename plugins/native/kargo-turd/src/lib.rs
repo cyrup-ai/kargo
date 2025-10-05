@@ -27,11 +27,17 @@ pub use watch::*;
 /// calling from watchexec's action handler (which is a sync closure).
 ///
 /// Called by:
-/// - plugin.rs in async context via tokio::task::spawn_blocking
+/// - plugin.rs in async context via `tokio::task::spawn_blocking` (correct pattern)
 /// - watch.rs action handler (sync context)
 ///
-/// NOTE: This is sync because all the heavy lifting is rayon-based
-/// (AnalysisExecutor uses rayon for parallel file processing)
+/// Architecture: `spawn_blocking` + rayon for CPU-bound work
+/// - Plugin interface requires async (`PluginCommand` trait)
+/// - Analysis is CPU-intensive (AST parsing, pattern matching)
+/// - Rayon provides optimal parallelism via dedicated thread pool
+/// - `spawn_blocking` bridges async→sync without blocking async executor
+///
+/// This follows Tokio's recommended pattern for CPU-bound work in async contexts.
+/// See: <https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html>
 pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
     use std::env;
     use log::info;
@@ -41,13 +47,13 @@ pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
 
     // Step 1: Find all Rust projects
     let current_dir = env::current_dir()?;
-    info!("Working directory: {:?}", current_dir);
+    info!("Working directory: {current_dir:?}");
 
     let projects = find_projects_with_progress(&current_dir)?;
 
     if projects.is_empty() {
         println!("No Rust projects found.");
-        info!("No projects found in {:?}", current_dir);
+        info!("No projects found in {current_dir:?}");
         return Ok(());
     }
 
@@ -60,7 +66,7 @@ pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
 
     for project in projects {
         match analyze_project_sync(&project, config) {
-            Ok(_) => {
+            Ok(()) => {
                 success_count += 1;
             }
             Err(e) => {
@@ -72,10 +78,10 @@ pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
     }
 
     println!("\n✅ Analysis complete!");
-    info!("Analysis finished: {} succeeded, {} failed", success_count, failure_count);
+    info!("Analysis finished: {success_count} succeeded, {failure_count} failed");
 
     if failure_count > 0 {
-        println!("⚠️  {} project(s) failed to analyze", failure_count);
+        println!("⚠️  {failure_count} project(s) failed to analyze");
     }
 
     Ok(())
@@ -107,7 +113,7 @@ fn analyze_project_sync(project: &Project, config: &Config) -> anyhow::Result<()
 
     info!(
         "Found {} orphaned methods across {} files",
-        orphaned_methods.values().map(|v| v.len()).sum::<usize>(),
+        orphaned_methods.values().map(std::vec::Vec::len).sum::<usize>(),
         orphaned_methods.len()
     );
 
@@ -127,7 +133,7 @@ fn analyze_project_sync(project: &Project, config: &Config) -> anyhow::Result<()
         config,
     )?;
 
-    println!("  ✅ Generated {} task file(s)\n", task_files_generated);
+    println!("  ✅ Generated {task_files_generated} task file(s)\n");
 
     Ok(())
 }
@@ -158,13 +164,23 @@ fn analyze_dependencies_sync(project: &Project) -> anyhow::Result<Vec<UnusedDepe
 
     let project_dir = project.cargo_toml_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Cargo.toml has no parent directory"))?;
-    let has_build_rs = project_dir.join("build.rs").exists();
+
+    // Read build.rs content if it exists
+    let build_rs_path = project_dir.join("build.rs");
+    let build_files: Vec<(String, String)> = if build_rs_path.exists() {
+        match fs::read_to_string(&build_rs_path) {
+            Ok(content) => vec![(build_rs_path.to_string_lossy().to_string(), content)],
+            Err(_) => vec![],
+        }
+    } else {
+        vec![]
+    };
 
     analyze_unused_dependencies_with_context(
         &project.cargo_toml_path,
         &src_contents,
         &test_contents,
-        has_build_rs,
+        &build_files,
     )
 }
 

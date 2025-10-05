@@ -151,9 +151,41 @@ fn main() {
     let parser = RustScriptParser;
     let dependencies = parser.parse(&source)?;
 
-    // Verify the results - parsing is currently not working as expected
-    // We'll fix this later - the current implementation fails to parse cargo-deps lines
-    assert_eq!(dependencies.len(), 0);
+    // Verify the results - parser correctly extracts all dependencies
+    assert_eq!(dependencies.len(), 3, "Expected 3 dependencies from cargo-deps line");
+
+    // Verify anyhow dependency
+    let anyhow_dep = dependencies
+        .iter()
+        .find(|d| d.name == "anyhow")
+        .expect("anyhow dependency should be found");
+    assert_eq!(anyhow_dep.version, "1.0.0");
+    assert!(matches!(
+        anyhow_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
+
+    // Verify tokio dependency
+    let tokio_dep = dependencies
+        .iter()
+        .find(|d| d.name == "tokio")
+        .expect("tokio dependency should be found");
+    assert_eq!(tokio_dep.version, "1.0.0");
+    assert!(matches!(
+        tokio_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
+
+    // Verify regex dependency (bare name without version)
+    let regex_dep = dependencies
+        .iter()
+        .find(|d| d.name == "regex")
+        .expect("regex dependency should be found");
+    assert_eq!(regex_dep.version, "*", "Bare dependency name should have wildcard version");
+    assert!(matches!(
+        regex_dep.location,
+        DependencyLocation::RustScriptDeps { .. }
+    ));
 
     Ok(())
 }

@@ -72,11 +72,13 @@ impl Default for EventBus {
 }
 
 impl EventBus {
+    #[must_use] 
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(100);
         Self { tx }
     }
 
+    #[must_use] 
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.tx.subscribe()
     }

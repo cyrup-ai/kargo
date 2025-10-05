@@ -11,6 +11,11 @@ pub struct OutputProcessor {
 }
 
 impl OutputProcessor {
+    /// Creates a new `OutputProcessor` with default patterns and transformations
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the default regex patterns fail to compile
     pub fn new() -> anyhow::Result<Self> {
         let mut patterns = HashMap::new();
         let mut transformations = HashMap::new();
@@ -19,26 +24,26 @@ impl OutputProcessor {
         patterns.insert(
             "error".to_string(),
             Regex::new(r"(?m)^error(\[E\d+\])?: .*$")
-                .map_err(|e| anyhow::anyhow!("Invalid error regex pattern: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Invalid error regex pattern: {e}"))?,
         );
 
         patterns.insert(
             "warning".to_string(),
             Regex::new(r"(?m)^warning: .*$")
-                .map_err(|e| anyhow::anyhow!("Invalid warning regex pattern: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Invalid warning regex pattern: {e}"))?,
         );
 
         patterns.insert(
             "compiler_artifact".to_string(),
             Regex::new(r"(?m)^\s*Compiling .*$")
-                .map_err(|e| anyhow::anyhow!("Invalid compiler artifact regex pattern: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Invalid compiler artifact regex pattern: {e}"))?,
         );
 
         // Add pattern for test results
         patterns.insert(
             "test_result".to_string(),
             Regex::new(r"(?m)^\s*test .* ... (?:ok|FAILED)$")
-                .map_err(|e| anyhow::anyhow!("Invalid test result regex pattern: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Invalid test result regex pattern: {e}"))?,
         );
 
         // Configure transformations for specific output types
@@ -61,31 +66,36 @@ impl OutputProcessor {
     }
 
     /// Add a new pattern
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pattern is not a valid regex
     pub fn add_pattern(&mut self, pattern_name: &str, pattern: &str) -> anyhow::Result<()> {
         match Regex::new(pattern) {
             Ok(regex) => {
                 self.patterns.insert(pattern_name.to_string(), regex);
                 Ok(())
             }
-            Err(e) => Err(anyhow::anyhow!("Invalid regex pattern: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Invalid regex pattern: {e}")),
         }
     }
 
     /// Process a single line of output
+    #[must_use] 
     pub fn process_line(&self, line: &str) -> String {
         // Check if line matches any of our patterns and apply transformations
         for (pattern_name, regex) in &self.patterns {
             if regex.is_match(line) {
                 // For errors and warnings, we want to highlight them
                 if pattern_name == "error" {
-                    return format!("ERROR: {}", line);
+                    return format!("ERROR: {line}");
                 } else if pattern_name == "warning" {
-                    return format!("WARNING: {}", line);
+                    return format!("WARNING: {line}");
                 }
 
                 // Apply custom transformations if available for this pattern
                 if let Some(transform) = self.transformations.get(pattern_name) {
-                    return format!("{}: {}", transform, line);
+                    return format!("{transform}: {line}");
                 }
             }
         }
@@ -95,6 +105,7 @@ impl OutputProcessor {
     }
 
     /// Process the entire command output
+    #[must_use] 
     pub fn process_output(&self, output: &str) -> String {
         // Split output into lines and process each line
         let processed_lines: Vec<String> =
@@ -109,12 +120,14 @@ impl OutputProcessor {
             let errors = self.count_pattern_matches(&processed_output, "error");
             let warnings = self.count_pattern_matches(&processed_output, "warning");
 
+            use std::fmt::Write;
+
             if errors > 0 {
-                summary.push_str(&format!("\n{} error(s) found\n", errors));
+                let _ = write!(summary, "\n{errors} error(s) found\n");
             }
 
             if warnings > 0 {
-                summary.push_str(&format!("\n{} warning(s) found\n", warnings));
+                let _ = write!(summary, "\n{warnings} warning(s) found\n");
             }
 
             // Apply any custom summary transformations
@@ -125,7 +138,7 @@ impl OutputProcessor {
             }
 
             if !summary.is_empty() {
-                return format!("{}{}", processed_output, summary);
+                return format!("{processed_output}{summary}");
             }
         }
 

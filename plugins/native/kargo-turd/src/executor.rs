@@ -5,9 +5,9 @@ use std::fs;
 use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use crate::analyzers::*;
+use crate::analyzers::{OrphanDetector, find_comment_violations, find_method_naming_violations, find_variable_naming_violations, find_hardcoded_values, ast_analyzer};
 use crate::file_queue::FileEntry;
-use crate::models::*;
+use crate::models::{Violation, PanicPattern, TestInSrc, OrphanedMethod, OrphanedModule};
 use crate::template_renderer::count_lines_of_code;
 
 // ============================================================================
@@ -24,6 +24,7 @@ pub struct AnalysisExecutor {
 }
 
 impl AnalysisExecutor {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             orphan_detector: Arc::new(Mutex::new(OrphanDetector::new())),
@@ -51,11 +52,11 @@ pub struct FileAnalysisResult {
 impl AnalysisExecutor {
     /// Analyze all files in parallel
     ///
-    /// Uses rayon's par_iter() to process files across all CPU cores.
-    /// Each thread runs analyze_file() independently.
+    /// Uses rayon's `par_iter()` to process files across all CPU cores.
+    /// Each thread runs `analyze_file()` independently.
     ///
     /// # Thread Safety
-    /// OrphanDetector is wrapped in Arc<Mutex<>> for thread-safe access.
+    /// `OrphanDetector` is wrapped in Arc<Mutex<>> for thread-safe access.
     /// Each thread locks the mutex briefly to add its results.
     pub fn analyze_files(
         &self,
@@ -104,7 +105,7 @@ impl AnalysisExecutor {
         // ===== Orphan Detection (TURD_5) =====
         {
             let mut detector = self.orphan_detector.lock()
-                .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {e}"))?;
             detector.add_file_analysis(&file_path, &ast_result);
         }
         
@@ -124,11 +125,11 @@ impl AnalysisExecutor {
 
     /// Get orphaned methods after all files analyzed
     ///
-    /// Returns HashMap<file_path, Vec<OrphanedMethod>>
+    /// Returns `HashMap`<`file_path`, Vec<OrphanedMethod>>
     /// grouped by source file for task file generation
     pub fn get_orphaned_methods(&self) -> Result<HashMap<String, Vec<OrphanedMethod>>> {
         let detector = self.orphan_detector.lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {e}"))?;
         Ok(detector.find_orphaned_methods())
     }
 
@@ -138,7 +139,7 @@ impl AnalysisExecutor {
     /// declared but never imported
     pub fn get_orphaned_modules(&self) -> Result<Vec<OrphanedModule>> {
         let detector = self.orphan_detector.lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {e}"))?;
         Ok(detector.find_orphaned_modules())
     }
 
@@ -151,15 +152,15 @@ impl AnalysisExecutor {
         uses: HashSet<String>,
     ) -> Result<()> {
         let mut detector = self.orphan_detector.lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to lock orphan detector: {e}"))?;
         detector.add_module_info(decls, uses);
         Ok(())
     }
 
     /// Analyze files with progress bar
     ///
-    /// Same as analyze_files() but shows progress to user.
-    /// ProgressBar is thread-safe (Sync + Send) and can be used
+    /// Same as `analyze_files()` but shows progress to user.
+    /// `ProgressBar` is thread-safe (Sync + Send) and can be used
     /// directly in rayon parallel iterators without Arc<Mutex<>>.
     pub fn analyze_files_with_progress(
         &self,

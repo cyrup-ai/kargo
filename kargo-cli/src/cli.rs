@@ -6,6 +6,7 @@ use which::which;
 use crate::plugins::manager::PluginManager;
 use kargo_plugin_api::ExecutionContext;
 
+#[must_use] 
 pub fn build_root_cli(pm: &PluginManager) -> Command {
     let mut root = Command::new("kargo")
         .about("Kargo Flux – cargo wrapper with zero-knowledge plugins")
@@ -54,7 +55,7 @@ pub fn build_root_cli(pm: &PluginManager) -> Command {
 async fn proxy_to_cargo(command: &str, args: &ArgMatches) -> Result<()> {
     // Find cargo binary in PATH
     let cargo_path = which("cargo")
-        .map_err(|e| anyhow::anyhow!("Failed to find cargo binary in PATH: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to find cargo binary in PATH: {e}"))?;
 
     let mut cargo_args = vec![command.to_string()];
 
@@ -82,7 +83,7 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
         Some(("cargo", sub)) => {
             // Find cargo binary in PATH
             let cargo_path = which("cargo")
-                .map_err(|e| anyhow::anyhow!("Failed to find cargo binary in PATH: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to find cargo binary in PATH: {e}"))?;
 
             // Handle external subcommands from clap
             if let Some((ext_cmd, ext_args)) = sub.subcommand() {
@@ -114,6 +115,7 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
                     config_dir: dirs::config_dir()
                         .unwrap_or_else(|| PathBuf::from("."))
                         .join("kargo"),
+                    runtime_handle: tokio::runtime::Handle::try_current().ok(),
                 };
                 plugin.run(ctx).await?;
             } else {
@@ -127,21 +129,8 @@ pub async fn dispatch(pm: &PluginManager, matches: &ArgMatches) -> Result<()> {
 }
 
 fn gather_raw_args(m: &ArgMatches) -> Vec<String> {
-    // Get the original command line arguments, excluding the program name and subcommand
-    let args: Vec<String> = std::env::args()
-        .skip(2) // Skip "kargo" and "mddoc" (or whatever subcommand)
-        .collect();
-
-    // If no args were captured from env, fall back to reconstructing from ArgMatches
-    if args.is_empty() {
-        m.ids()
-            .flat_map(|id| {
-                m.get_raw(id.as_str())
-                    .into_iter()
-                    .flat_map(|vals| vals.map(|v| v.to_string_lossy().into_owned()))
-            })
-            .collect()
-    } else {
-        args
-    }
+    m.get_many::<std::ffi::OsString>("")
+        .unwrap_or_default()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect()
 }

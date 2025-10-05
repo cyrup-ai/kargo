@@ -13,7 +13,7 @@ rayon = { workspace = true }
 jwalk = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_yaml_ok = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 indicatif = { workspace = true }

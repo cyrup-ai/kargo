@@ -4,12 +4,12 @@ members = [
     "kargo-cli",
     "kargo-plugin/kargo-plugin-api",
     "kargo-plugin/kargo-plugin-builder",
-    "kargo-plugin/kargo-plugin-macros",
     "kargo-plugin/kargo-plugin-native",
     "kargo-plugin/kargo-plugin-wasm",
     "plugins/native/kargo-kurate",
     "plugins/native/kargo-mddoc",
     "plugins/native/kargo-mdlint",
+    "plugins/native/kargo-plugin",
     "plugins/native/kargo-sap",
     "plugins/native/kargo-turd",
     "plugins/native/kargo-upgrade",
@@ -26,12 +26,11 @@ authors = ["Kargo Contributors"]
 kargo-plugin-api = { path = "./kargo-plugin/kargo-plugin-api" }
 kargo-plugin-native = { path = "./kargo-plugin/kargo-plugin-native" }
 kargo-plugin-wasm = { path = "./kargo-plugin/kargo-plugin-wasm" }
-kargo-plugin-macros = { path = "./kargo-plugin/kargo-plugin-macros" }
 kargo-plugin-builder = { path = "./kargo-plugin/kargo-plugin-builder" }
 
 anyhow = "1"
-clap = { version = "4.5.40", features = ["derive", "string"] }
-tokio = { version = "1.45", features = ["full"] }
+clap = { version = "4.5.48", features = ["derive", "string"] }
+tokio = { version = "1.47", features = ["full"] }
 libloading = "0.8"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
@@ -45,9 +44,9 @@ regex = "1"
 gag = "1.0"
 jwalk = "0.8"
 rayon = "1"
-toml_edit = "0.22"
+toml_edit = "0.23"
 futures = "0.3"
-cargo_metadata = "0.20"
+cargo_metadata = "0.23"
 tempfile = "3"
 directories = "6"
 serde_yaml = "0.9"
@@ -55,20 +54,22 @@ which = "8.0.0"
 assert_fs = "1.1.3"
 predicates = "3.1.3"
 serde_yaml_ok = "0.9.36"
-indicatif = "0.17.11"
+indicatif = "0.18.0"
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 once_cell = "1.21.3"
-reqwest = { version = "0.12.20", features = ["json", "stream", "blocking"] }
+reqwest = { version = "0.12.23", features = ["json", "stream", "blocking"] }
 cargo-manifest = "0.19.1"
-rustdoc-types = "0.46.1"
-thiserror = "2.0.12"
+rustdoc-types = "0.56.0"
+thiserror = "2.0.17"
 eyre = "0.6.12"
-semver = "1.0.26"
+semver = "1.0.27"
 fs_extra = "1.3.0"
 lazy_static = "1.5.0"
-extism = { version = "1.11.1"}
-clap_complete = "4.5.54"
+extism = { version = "1.12.0"}
+clap_complete = "4.5.58"
 globset = "0.4.16"
-cargo-nextest = "0.9.99"
+cargo-nextest = "0.9.105"
 mado = { git = "hhttps://github.com/akiomik/mado.git", branch = "main" }
 sha2 = "0.10"
+gix = { version = "0.73", features = ["blocking-network-client"] }
+git-url-parse = "0.6"

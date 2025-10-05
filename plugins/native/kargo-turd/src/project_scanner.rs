@@ -5,7 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use crate::models::Project;
 
-/// Find all Rust projects starting from root_path with visual progress feedback
+/// Find all Rust projects starting from `root_path` with visual progress feedback
 /// Returns Vec of Project with collected src and test files
 pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     // Spinner for Cargo.toml discovery phase
@@ -13,7 +13,7 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .map_err(|e| anyhow::anyhow!("Failed to set progress style: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Failed to set progress style: {e}"))?
     );
     pb.set_message("Scanning for Cargo.toml files...");
     pb.enable_steady_tick(Duration::from_millis(100));
@@ -33,7 +33,7 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     Ok(projects)
 }
 
-/// Find all Rust projects starting from root_path
+/// Find all Rust projects starting from `root_path`
 /// Returns Vec of Project with collected src and test files
 pub fn find_projects(root_path: &Path) -> Result<Vec<Project>> {
     let cargo_toml_paths = find_cargo_toml_files(root_path)?;
@@ -57,7 +57,7 @@ fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
         .follow_links(true)  // IMPORTANT: Follow symlinks
         .parallelism(jwalk::Parallelism::RayonNewPool(0))  // 0 = use all CPU cores
         .into_iter()
-        .filter_map(|e| e.ok())  // Skip permission denied errors
+        .filter_map(std::result::Result::ok)  // Skip permission denied errors
     {
         let path = entry.path();
         if path.file_name().is_some_and(|f| f == "Cargo.toml") {
@@ -98,7 +98,7 @@ fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
 
     for entry in WalkDir::new(dir)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
         if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {

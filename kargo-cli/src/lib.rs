@@ -40,7 +40,7 @@ pub struct DependencyUpdateJob<'a> {
     events: EventBus,
 }
 
-impl<'a> DependencyUpdateJob<'a> {
+impl DependencyUpdateJob<'_> {
     // Get a future that will execute the update job
     pub async fn execute(mut self) -> anyhow::Result<()> {
         let backup = &mut self.backup;
@@ -72,6 +72,7 @@ impl Default for DependencyUpdater {
 }
 
 impl DependencyUpdater {
+    #[must_use] 
     pub fn new() -> Self {
         let config = Config::load().unwrap_or_default();
         let events = EventBus::new();
@@ -80,13 +81,11 @@ impl DependencyUpdater {
             .map(|dirs| dirs.split(':').map(PathBuf::from).collect())
             .unwrap_or_else(|_| {
                 vec![
-                    std::env::var("HOME")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|_| PathBuf::from(".")),
+                    std::env::var("HOME").map_or_else(|_| PathBuf::from("."), PathBuf::from),
                 ]
             });
 
-        info!("Scanning directories: {:?}", scan_dirs);
+        info!("Scanning directories: {scan_dirs:?}");
 
         Self {
             config,
@@ -95,6 +94,7 @@ impl DependencyUpdater {
         }
     }
 
+    #[must_use] 
     pub fn find_cargo_tomls(&self) -> Vec<PathBuf> {
         self.scan_dirs
             .par_iter()
@@ -103,7 +103,7 @@ impl DependencyUpdater {
                     .follow_links(true)
                     .parallelism(jwalk::Parallelism::RayonNewPool(0)) // Use available cores
                     .into_iter()
-                    .filter_map(|e| e.ok())
+                    .filter_map(std::result::Result::ok)
                     .filter(|e| e.file_name.to_string_lossy() == "Cargo.toml")
                     .map(|e| e.path())
                     .collect::<Vec<_>>()
@@ -111,11 +111,13 @@ impl DependencyUpdater {
             .collect()
     }
 
+    #[must_use] 
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.events.subscribe()
     }
 
     // Non-async interface that returns a domain-specific type
+    #[must_use] 
     pub fn run(&self) -> DependencyUpdateJob<'_> {
         let backup = if self.config.rollback_on_failure {
             BackupManager::new(self.events.clone()).ok()

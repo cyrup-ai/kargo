@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use anyhow::Result;
 use chrono::Utc;
-use crate::models::*;
+use crate::models::{TemplateContext, Violation, PanicPattern, TestInSrc, OrphanedModule, OrphanedMethod, UnusedDependency, compute_file_hash};
 
 // ============================================================================
 // TEMPLATE RENDERING
@@ -11,10 +11,10 @@ use crate::models::*;
 
 /// Render task file from template context
 ///
-/// Loads master.j2.md and all included templates from template_dir
+/// Loads master.j2.md and all included templates from `template_dir`
 ///
 /// # Arguments
-/// * `ctx` - TemplateContext with all violation data
+/// * `ctx` - `TemplateContext` with all violation data
 /// * `template_dir` - Path to ./prompt/ directory
 ///
 /// # Returns
@@ -72,7 +72,7 @@ pub struct ViolationData {
     pub unused_dependencies: Vec<UnusedDependency>,
 }
 
-/// Helper for building TemplateContext from analysis results
+/// Helper for building `TemplateContext` from analysis results
 pub struct ContextBuilder {
     pub project_name: String,
     pub file_path: PathBuf,
@@ -80,13 +80,14 @@ pub struct ContextBuilder {
 }
 
 impl ContextBuilder {
-    /// Build TemplateContext with all violation data
+    /// Build `TemplateContext` with all violation data
     ///
     /// Computes:
-    /// - file_hash from file path
+    /// - `file_hash` from file path
     /// - timestamp (current time in RFC3339 format)
-    /// - needs_decomposition (true if > 300 LOC)
-    /// - project_relative_path (relative to project root)
+    /// - `needs_decomposition` (true if > 300 LOC)
+    /// - `project_relative_path` (relative to project root)
+    #[must_use] 
     pub fn build(
         &self,
         violations: ViolationData,
@@ -137,7 +138,7 @@ impl ContextBuilder {
 /// Write rendered task file to tier-specific directory
 ///
 /// Creates directory structure:
-/// ./task/_<project_name>/tier<N>/<file_name>_<hash>.md
+/// ./task/_<`project_name>/tier`<N>/<`file_name`>_<hash>.md
 ///
 /// # Arguments
 /// * `rendered` - Rendered markdown string
@@ -159,14 +160,14 @@ pub fn write_task_file(
 ) -> Result<PathBuf> {
     // Build directory path: ./task/_<project>/tier<N>/
     let tier_dir = output_dir
-        .join(format!("_{}", project_name))
-        .join(format!("tier{}", tier));
+        .join(format!("_{project_name}"))
+        .join(format!("tier{tier}"));
     
     // Create directories if they don't exist
     fs::create_dir_all(&tier_dir)?;
     
     // Build filename: <file_name_no_ext>_<hash>.md
-    let output_file = tier_dir.join(format!("{}_{}.md", file_name, file_hash));
+    let output_file = tier_dir.join(format!("{file_name}_{file_hash}.md"));
     
     // Write rendered content
     fs::write(&output_file, rendered)?;
@@ -201,6 +202,7 @@ pub fn write_task_file(
 /// "#;
 /// assert_eq!(count_lines_of_code(code), 4);
 /// ```
+#[must_use] 
 pub fn count_lines_of_code(content: &str) -> u32 {
     content.lines()
         .filter(|line| {

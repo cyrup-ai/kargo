@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    /// Directories to scan (overridden by KRATER_SCAN)
+    /// Directories to scan (overridden by `KRATER_SCAN`)
     pub scan_dirs: Vec<PathBuf>,
     /// Commands to run after dependency consolidation
     pub post_commands: Vec<String>,

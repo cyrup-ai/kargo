@@ -12,7 +12,7 @@ use crate::models::UnusedDependency;
 ///
 /// # Arguments
 /// * `cargo_toml` - Path to Cargo.toml file
-/// * `all_file_contents` - Vec of (file_path, file_content) tuples
+/// * `all_file_contents` - Vec of (`file_path`, `file_content`) tuples
 ///
 /// # Returns
 /// Vec of unused dependencies with their Cargo.toml section
@@ -61,7 +61,7 @@ pub fn analyze_unused_dependencies(
 /// Normalize crate name from Cargo.toml format to Rust import format
 ///
 /// Cargo.toml uses kebab-case: "tokio-util"
-/// Rust uses snake_case: tokio_util
+/// Rust uses `snake_case`: `tokio_util`
 ///
 /// # Examples
 /// ```
@@ -70,8 +70,9 @@ pub fn analyze_unused_dependencies(
 /// assert_eq!(normalize_crate_name("tokio-util"), "tokio_util");
 /// assert_eq!(normalize_crate_name("serde_json"), "serde_json");  // No change
 /// ```
+#[must_use] 
 pub fn normalize_crate_name(name: &str) -> String {
-    name.replace("-", "_")
+    name.replace('-', "_")
 }
 
 /// Collect all used dependency names from source files
@@ -143,12 +144,12 @@ fn extract_crate_names(tree: &syn::UseTree, used: &mut HashSet<String>) {
 /// * `cargo_toml` - Path to Cargo.toml
 /// * `src_files` - Vec of (path, content) for src/ files
 /// * `test_files` - Vec of (path, content) for tests/ files
-/// * `has_build_rs` - Whether build.rs exists
+/// * `build_files` - Vec of (path, content) for build.rs file (empty vec if no build.rs)
 pub fn analyze_unused_dependencies_with_context(
     cargo_toml: &Path,
     src_files: &[(String, String)],
     test_files: &[(String, String)],
-    has_build_rs: bool,
+    build_files: &[(String, String)],
 ) -> anyhow::Result<Vec<UnusedDependency>> {
     let content = fs::read_to_string(cargo_toml)?;
     let toml: Value = toml::from_str(&content)?;
@@ -185,12 +186,21 @@ pub fn analyze_unused_dependencies_with_context(
         }
     }
 
-    // Check [build-dependencies] - only if build.rs exists
-    // Note: Would need to parse build.rs separately
-    // For now, we skip this check (acceptable limitation)
-    if has_build_rs && toml.get("build-dependencies").and_then(|v| v.as_table()).is_some() {
-        // TODO: Parse build.rs and check usage
-        // For v1, we'll skip build-dependencies
+    // Check [build-dependencies] - must be used in build.rs
+    if !build_files.is_empty()
+        && let Some(build_deps) = toml.get("build-dependencies").and_then(|v| v.as_table())
+    {
+        let used = collect_used_deps(build_files);
+
+        for (name, _) in build_deps {
+            if !used.contains(&normalize_crate_name(name)) {
+                unused.push(UnusedDependency {
+                    name: name.clone(),
+                    cargo_toml: cargo_toml.to_string_lossy().to_string(),
+                    section: "[build-dependencies]".to_string(),
+                });
+            }
+        }
     }
 
     Ok(unused)

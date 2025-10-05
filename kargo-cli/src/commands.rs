@@ -27,7 +27,7 @@ async fn run_commands_impl(
             .current_dir(working_dir)
             .output()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to execute command {}: {}", cmd, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to execute command {cmd}: {e}"))?;
 
         let success = output.status.success();
         events.publish(Event::CommandFinished {

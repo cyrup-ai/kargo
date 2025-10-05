@@ -3,7 +3,9 @@
 use crate::error::Error;
 use crate::utils;
 use log::{debug, info};
-use rustdoc_types::{Crate, Enum, Item, ItemEnum, Module, Struct, Trait};
+use rustdoc_types::{Crate, Enum, Item, ItemEnum, Module, Struct, StructKind, Trait, Type, VariantKind};
+use rustdoc_types::{GenericArg, GenericArgs};
+use rustdoc_types::{AssocItemConstraintKind, Term};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -38,6 +40,7 @@ pub struct MultipageGenerator {
 }
 
 impl MultipageGenerator {
+    #[must_use] 
     pub fn new(crate_data: Crate, config: MultipageConfig) -> Self {
         Self { crate_data, config }
     }
@@ -89,13 +92,12 @@ impl MultipageGenerator {
             .index
             .get(&self.crate_data.root)
             .and_then(|item| item.name.as_ref())
-            .map(|s| s.as_str())
-            .unwrap_or("Crate");
+            .map_or("Crate", std::string::String::as_str);
 
-        content.push_str(&format!("# {} Documentation\n\n", crate_name));
+        content.push_str(&format!("# {crate_name} Documentation\n\n"));
 
         if let Some(version) = &self.crate_data.crate_version {
-            content.push_str(&format!("**Version:** {}\n\n", version));
+            content.push_str(&format!("**Version:** {version}\n\n"));
         }
 
         // Add crate-level documentation
@@ -180,18 +182,17 @@ impl MultipageGenerator {
         modules.sort_by(|a, b| a.2.cmp(b.2));
 
         for (_id, item, name) in modules {
-            content.push_str(&format!("## `{}`\n\n", name));
+            content.push_str(&format!("## `{name}`\n\n"));
 
             if let Some(docs) = &item.docs {
                 let brief = self.extract_brief_docs(docs);
-                content.push_str(&format!("{}\n\n", brief));
+                content.push_str(&format!("{brief}\n\n"));
             }
 
             // Generate link to detailed page
             let detailed_link = format!("module_{}.md", self.sanitize_filename(name));
             content.push_str(&format!(
-                "[View detailed documentation]({})\n\n",
-                detailed_link
+                "[View detailed documentation]({detailed_link})\n\n"
             ));
 
             // Generate detailed page for this module
@@ -223,18 +224,17 @@ impl MultipageGenerator {
         structs.sort_by(|a, b| a.2.cmp(b.2));
 
         for (_id, item, name) in structs {
-            content.push_str(&format!("## `{}`\n\n", name));
+            content.push_str(&format!("## `{name}`\n\n"));
 
             if let Some(docs) = &item.docs {
                 let brief = self.extract_brief_docs(docs);
-                content.push_str(&format!("{}\n\n", brief));
+                content.push_str(&format!("{brief}\n\n"));
             }
 
             // Generate link to detailed page
             let detailed_link = format!("struct_{}.md", self.sanitize_filename(name));
             content.push_str(&format!(
-                "[View detailed documentation]({})\n\n",
-                detailed_link
+                "[View detailed documentation]({detailed_link})\n\n"
             ));
 
             // Generate detailed page for this struct
@@ -266,18 +266,17 @@ impl MultipageGenerator {
         traits.sort_by(|a, b| a.2.cmp(b.2));
 
         for (_id, item, name) in traits {
-            content.push_str(&format!("## `{}`\n\n", name));
+            content.push_str(&format!("## `{name}`\n\n"));
 
             if let Some(docs) = &item.docs {
                 let brief = self.extract_brief_docs(docs);
-                content.push_str(&format!("{}\n\n", brief));
+                content.push_str(&format!("{brief}\n\n"));
             }
 
             // Generate link to detailed page
             let detailed_link = format!("trait_{}.md", self.sanitize_filename(name));
             content.push_str(&format!(
-                "[View detailed documentation]({})\n\n",
-                detailed_link
+                "[View detailed documentation]({detailed_link})\n\n"
             ));
 
             // Generate detailed page for this trait
@@ -309,18 +308,17 @@ impl MultipageGenerator {
         enums.sort_by(|a, b| a.2.cmp(b.2));
 
         for (_id, item, name) in enums {
-            content.push_str(&format!("## `{}`\n\n", name));
+            content.push_str(&format!("## `{name}`\n\n"));
 
             if let Some(docs) = &item.docs {
                 let brief = self.extract_brief_docs(docs);
-                content.push_str(&format!("{}\n\n", brief));
+                content.push_str(&format!("{brief}\n\n"));
             }
 
             // Generate link to detailed page
             let detailed_link = format!("enum_{}.md", self.sanitize_filename(name));
             content.push_str(&format!(
-                "[View detailed documentation]({})\n\n",
-                detailed_link
+                "[View detailed documentation]({detailed_link})\n\n"
             ));
 
             // Generate detailed page for this enum
@@ -352,11 +350,11 @@ impl MultipageGenerator {
         functions.sort_by(|a, b| a.2.cmp(b.2));
 
         for (_id, item, name) in functions {
-            content.push_str(&format!("## `{}`\n\n", name));
+            content.push_str(&format!("## `{name}`\n\n"));
 
             if let Some(docs) = &item.docs {
                 let brief = self.extract_brief_docs(docs);
-                content.push_str(&format!("{}\n\n", brief));
+                content.push_str(&format!("{brief}\n\n"));
             }
         }
 
@@ -369,7 +367,7 @@ impl MultipageGenerator {
     /// Generate detailed module page
     fn generate_detailed_module_page(&self, module: &Module, name: &str) -> Result<(), Error> {
         let mut content = String::new();
-        content.push_str(&format!("# Module `{}`\n\n", name));
+        content.push_str(&format!("# Module `{name}`\n\n"));
 
         // Find the module item for documentation
         for item in self.crate_data.index.values() {
@@ -400,12 +398,12 @@ impl MultipageGenerator {
                             _ => "Item",
                         };
 
-                        content.push_str(&format!("* **{}** `{}`", item_type, item_name));
+                        content.push_str(&format!("* **{item_type}** `{item_name}`"));
 
                         if let Some(docs) = &item.docs {
                             let brief = self.extract_brief_docs(docs);
                             if !brief.is_empty() {
-                                content.push_str(&format!(" - {}", brief));
+                                content.push_str(&format!(" - {brief}"));
                             }
                         }
                         content.push('\n');
@@ -432,15 +430,70 @@ impl MultipageGenerator {
         item: &Item,
     ) -> Result<(), Error> {
         let mut content = String::new();
-        content.push_str(&format!("# Struct `{}`\n\n", name));
+        content.push_str(&format!("# Struct `{name}`\n\n"));
 
         if let Some(docs) = &item.docs {
             content.push_str(&format!("{}\n\n", self.clean_docs(docs)));
         }
 
-        // TODO: Add fields documentation when we have better type handling
-        content.push_str("## Fields\n\n");
-        content.push_str("Field information will be available in a future version.\n\n");
+        // Generate fields section based on struct kind
+        match &_struct_item.kind {
+            StructKind::Unit => {
+                // Unit structs have no fields
+            }
+            StructKind::Tuple(fields) => {
+                content.push_str("## Fields\n\n");
+                content.push_str("| Index | Type | Documentation |\n");
+                content.push_str("|-------|------|---------------|\n");
+
+                for (i, field_opt) in fields.iter().enumerate() {
+                    if let Some(field_id) = field_opt {
+                        if let Some(field_item) = self.crate_data.index.get(field_id) {
+                            if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                let docs = field_item.docs.as_deref().map_or_else(|| "-".to_string(), |d| d.replace('\n', " "));
+                                content.push_str(&format!(
+                                    "| {} | `{}` | {} |\n",
+                                    i,
+                                    self.format_type(field_type),
+                                    docs
+                                ));
+                            }
+                        }
+                    } else {
+                        content.push_str(&format!("| {i} | `private` | *Private field* |\n"));
+                    }
+                }
+                content.push('\n');
+            }
+            StructKind::Plain { fields, has_stripped_fields } => {
+                if !fields.is_empty() {
+                    content.push_str("## Fields\n\n");
+                    content.push_str("| Field | Type | Documentation |\n");
+                    content.push_str("|-------|------|---------------|\n");
+
+                    for field_id in fields {
+                        if let Some(field_item) = self.crate_data.index.get(field_id) {
+                            if let Some(field_name) = &field_item.name {
+                                if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                    let docs = field_item.docs.as_deref().map_or_else(|| "-".to_string(), |d| d.replace('\n', " "));
+                                    content.push_str(&format!(
+                                        "| `{}` | `{}` | {} |\n",
+                                        field_name,
+                                        self.format_type(field_type),
+                                        docs
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    if *has_stripped_fields {
+                        content.push_str("| *private* | ... | *Some fields omitted* |\n");
+                    }
+                    content.push('\n');
+                }
+            }
+        }
 
         let file_path = self
             .config
@@ -459,7 +512,7 @@ impl MultipageGenerator {
         item: &Item,
     ) -> Result<(), Error> {
         let mut content = String::new();
-        content.push_str(&format!("# Trait `{}`\n\n", name));
+        content.push_str(&format!("# Trait `{name}`\n\n"));
 
         if let Some(docs) = &item.docs {
             content.push_str(&format!("{}\n\n", self.clean_docs(docs)));
@@ -478,7 +531,7 @@ impl MultipageGenerator {
                             _ => "Item",
                         };
 
-                        content.push_str(&format!("### {} `{}`\n\n", item_type, assoc_name));
+                        content.push_str(&format!("### {item_type} `{assoc_name}`\n\n"));
 
                         if let Some(docs) = &assoc_item.docs {
                             content.push_str(&format!("{}\n\n", self.clean_docs(docs)));
@@ -505,7 +558,7 @@ impl MultipageGenerator {
         item: &Item,
     ) -> Result<(), Error> {
         let mut content = String::new();
-        content.push_str(&format!("# Enum `{}`\n\n", name));
+        content.push_str(&format!("# Enum `{name}`\n\n"));
 
         if let Some(docs) = &item.docs {
             content.push_str(&format!("{}\n\n", self.clean_docs(docs)));
@@ -516,10 +569,59 @@ impl MultipageGenerator {
         for variant_id in &enum_item.variants {
             if let Some(variant) = self.crate_data.index.get(variant_id) {
                 if let Some(variant_name) = &variant.name {
-                    content.push_str(&format!("### `{}`\n\n", variant_name));
+                    content.push_str(&format!("### `{variant_name}`\n\n"));
 
                     if let Some(docs) = &variant.docs {
                         content.push_str(&format!("{}\n\n", self.clean_docs(docs)));
+                    }
+
+                    // Add field information for variants with fields
+                    if let ItemEnum::Variant(variant_data) = &variant.inner {
+                        match &variant_data.kind {
+                            VariantKind::Plain => {
+                                // No fields
+                            }
+                            VariantKind::Tuple(fields) => {
+                                content.push_str("**Fields:**\n\n");
+                                content.push_str("| Index | Type |\n");
+                                content.push_str("|-------|------|\n");
+
+                                for (i, field_opt) in fields.iter().enumerate() {
+                                    if let Some(field_id) = field_opt {
+                                        if let Some(field_item) = self.crate_data.index.get(field_id) {
+                                            if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                                content.push_str(&format!(
+                                                    "| {} | `{}` |\n",
+                                                    i,
+                                                    self.format_type(field_type)
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                                content.push('\n');
+                            }
+                            VariantKind::Struct { fields, .. } => {
+                                content.push_str("**Fields:**\n\n");
+                                content.push_str("| Field | Type |\n");
+                                content.push_str("|-------|------|\n");
+
+                                for field_id in fields {
+                                    if let Some(field_item) = self.crate_data.index.get(field_id) {
+                                        if let Some(field_name) = &field_item.name {
+                                            if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                                content.push_str(&format!(
+                                                    "| `{}` | `{}` |\n",
+                                                    field_name,
+                                                    self.format_type(field_type)
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                                content.push('\n');
+                            }
+                        }
                     }
                 }
             }
@@ -551,7 +653,7 @@ impl MultipageGenerator {
     /// Clean documentation text for markdown output
     fn clean_docs(&self, docs: &str) -> String {
         docs.lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>()
             .join("\n")
@@ -563,13 +665,195 @@ impl MultipageGenerator {
             .next()
             .unwrap_or("")
             .lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .collect::<Vec<_>>()
             .join(" ")
             .chars()
             .take(200)
             .collect::<String>()
             + if docs.len() > 200 { "..." } else { "" }
+    }
+
+    /// Format trait bounds for generic parameters
+    fn format_trait_bounds(&self, output: &mut String, bounds: &[rustdoc_types::GenericBound]) {
+        for (i, bound) in bounds.iter().enumerate() {
+            match bound {
+                rustdoc_types::GenericBound::TraitBound {
+                    trait_,
+                    generic_params,
+                    modifier,
+                } => {
+                    match modifier {
+                        rustdoc_types::TraitBoundModifier::None => {}
+                        rustdoc_types::TraitBoundModifier::Maybe => output.push('?'),
+                        rustdoc_types::TraitBoundModifier::MaybeConst => output.push_str("~const "),
+                    }
+
+                    if !generic_params.is_empty() {
+                        output.push_str("for<");
+                        for (j, param) in generic_params.iter().enumerate() {
+                            match &param.kind {
+                                rustdoc_types::GenericParamDefKind::Lifetime { .. } => {
+                                    output.push_str(&format!("'{}", param.name));
+                                }
+                                _ => output.push_str(&param.name),
+                            }
+
+                            if j < generic_params.len() - 1 {
+                                output.push_str(", ");
+                            }
+                        }
+                        output.push_str("> ");
+                    }
+
+                    output.push_str(&trait_.path);
+                    if let Some(args) = &trait_.args {
+                        let mut args_str = String::new();
+                        self.format_generic_args(&mut args_str, args);
+                        output.push_str(&args_str);
+                    }
+                }
+                rustdoc_types::GenericBound::Outlives(lifetime) => {
+                    output.push_str(&format!("'{lifetime}"));
+                }
+                // Handle other bound types if needed
+                _ => output.push_str("/* unsupported bound */"),
+            }
+
+            if i < bounds.len() - 1 {
+                output.push_str(" + ");
+            }
+        }
+    }
+
+    /// Format generic arguments for a type
+    fn format_generic_args(&self, output: &mut String, args: &GenericArgs) {
+        match args {
+            GenericArgs::AngleBracketed { args, constraints } => {
+                if args.is_empty() && constraints.is_empty() {
+                    return;
+                }
+
+                output.push('<');
+
+                // Format args
+                for (i, arg) in args.iter().enumerate() {
+                    match arg {
+                        GenericArg::Lifetime(lifetime) => output.push_str(&format!("'{lifetime}")),
+                        GenericArg::Type(type_) => output.push_str(&self.format_type(type_)),
+                        GenericArg::Const(constant) => output.push_str(&constant.expr),
+                        GenericArg::Infer => output.push('_'),
+                    }
+
+                    if i < args.len() - 1 || !constraints.is_empty() {
+                        output.push_str(", ");
+                    }
+                }
+
+                // Format constraints (previously called bindings)
+                for (i, constraint) in constraints.iter().enumerate() {
+                    output.push_str(&constraint.name);
+
+                    // Format constraint args if present
+                    if let Some(args) = &constraint.args {
+                        let mut args_str = String::new();
+                        self.format_generic_args(&mut args_str, args);
+                        if !args_str.is_empty() && args_str != "<>" {
+                            output.push_str(&args_str);
+                        }
+                    }
+
+                    // In newer rustdoc-types, AssocItemConstraint has name, args, and binding
+                    // The binding is now an enum with Equality and Constraint variants
+                    match &constraint.binding {
+                        AssocItemConstraintKind::Equality(term) => {
+                            output.push_str(" = ");
+                            match term {
+                                Term::Type(type_) => output.push_str(&self.format_type(type_)),
+                                Term::Constant(constant) => output.push_str(&constant.expr),
+                            }
+                        }
+                        AssocItemConstraintKind::Constraint(bounds) => {
+                            output.push_str(": ");
+                            self.format_trait_bounds(output, bounds);
+                        }
+                    }
+
+                    if i < constraints.len() - 1 {
+                        output.push_str(", ");
+                    }
+                }
+
+                output.push('>');
+            }
+            GenericArgs::Parenthesized {
+                inputs,
+                output: output_type,
+            } => {
+                output.push('(');
+
+                for (i, input) in inputs.iter().enumerate() {
+                    output.push_str(&self.format_type(input));
+                    if i < inputs.len() - 1 {
+                        output.push_str(", ");
+                    }
+                }
+
+                output.push(')');
+
+                if let Some(output_ty) = output_type {
+                    output.push_str(&format!(" -> {}", self.format_type(output_ty)));
+                }
+            }
+            _ => {
+                output.push_str("/* unsupported generic args */");
+            }
+        }
+    }
+
+    /// Format type for display
+    #[allow(clippy::only_used_in_recursion)]
+    fn format_type(&self, ty: &Type) -> String {
+        match ty {
+            Type::ResolvedPath(path) => {
+                let mut result = path.path.clone();
+                if let Some(args) = &path.args {
+                    self.format_generic_args(&mut result, args);
+                }
+                result
+            }
+            Type::Generic(name) => name.clone(),
+            Type::Primitive(name) => name.clone(),
+            Type::Tuple(ts) => {
+                if ts.is_empty() {
+                    "()".to_string()
+                } else {
+                    let types: Vec<String> = ts.iter().map(|t| self.format_type(t)).collect();
+                    format!("({})", types.join(", "))
+                }
+            }
+            Type::Slice(elem_ty) => format!("[{}]", self.format_type(elem_ty)),
+            Type::Array { type_, len } => format!("[{}; {}]", self.format_type(type_), len),
+            Type::BorrowedRef { lifetime, is_mutable, type_ } => {
+                let mut result = String::from("&");
+                if let Some(lt) = lifetime {
+                    result.push_str(&format!("'{lt} "));
+                }
+                if *is_mutable {
+                    result.push_str("mut ");
+                }
+                result.push_str(&self.format_type(type_));
+                result
+            }
+            Type::RawPointer { is_mutable, type_ } => {
+                if *is_mutable {
+                    format!("*mut {}", self.format_type(type_))
+                } else {
+                    format!("*const {}", self.format_type(type_))
+                }
+            }
+            _ => "?".to_string(), // Fallback for unhandled types
+        }
     }
 }
 

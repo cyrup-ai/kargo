@@ -69,7 +69,7 @@ impl PluginCommand for MdlintPlugin {
                     "zsh" => Shell::Zsh,
                     "powershell" => Shell::PowerShell,
                     "elvish" => Shell::Elvish,
-                    _ => return Err(anyhow::anyhow!("Unsupported shell: {}", shell_str)),
+                    _ => return Err(anyhow::anyhow!("Unsupported shell: {shell_str}")),
                 };
 
                 let mado_cmd = mado::Cli::command();
@@ -100,7 +100,7 @@ impl PluginCommand for MdlintPlugin {
                     values
                         .map(|pattern| {
                             Glob::new(pattern).map_err(|e| {
-                                anyhow::anyhow!("Invalid glob pattern '{}': {}", pattern, e)
+                                anyhow::anyhow!("Invalid glob pattern '{pattern}': {e}")
                             })
                         })
                         .collect::<Result<Vec<_>>>()
@@ -120,14 +120,14 @@ impl PluginCommand for MdlintPlugin {
             // Convert to mado config
             let config = options
                 .to_config()
-                .map_err(|e| anyhow::anyhow!("Config error: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Config error: {e}"))?;
 
             // Create checker and run
             let checker = mado::command::check::Checker::new(&files, config)
-                .map_err(|e| anyhow::anyhow!("Checker creation error: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Checker creation error: {e}"))?;
             let exit_code = checker
                 .check()
-                .map_err(|e| anyhow::anyhow!("Check error: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Check error: {e}"))?;
 
             // Convert ExitCode to Result for plugin API
             match exit_code {

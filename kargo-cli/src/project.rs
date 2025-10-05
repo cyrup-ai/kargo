@@ -103,6 +103,7 @@ impl Default for ProjectAnalyzer {
 
 impl ProjectAnalyzer {
     /// Create a new project analyzer
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -186,7 +187,7 @@ impl ProjectAnalyzer {
                         && let Some(deps) = doc.get("dependencies")
                         && let Some(deps_table) = deps.as_table()
                     {
-                        for (key, value) in deps_table.iter() {
+                        for (key, value) in deps_table {
                             let version = extract_version_from_toml(value);
                             if let Some(version) = version {
                                 dependencies.insert(key.to_string(), version);
@@ -224,7 +225,7 @@ impl ProjectAnalyzer {
         let is_proc_macro = document
             .get("lib")
             .and_then(|lib| lib.get("proc-macro"))
-            .and_then(|proc_macro| proc_macro.as_bool())
+            .and_then(toml_edit::Item::as_bool)
             == Some(true);
 
         let name = document
@@ -339,7 +340,7 @@ impl ProjectAnalyzer {
                 .iter()
                 .filter_map(|m| m.as_str())
                 .map(|m| {
-                    if m.starts_with("/") {
+                    if m.starts_with('/') {
                         PathBuf::from(m)
                     } else {
                         parent_dir.join(m)
@@ -357,7 +358,7 @@ impl ProjectAnalyzer {
                     .iter()
                     .filter_map(|m| m.as_str())
                     .map(|m| {
-                        if m.starts_with("/") {
+                        if m.starts_with('/') {
                             PathBuf::from(m)
                         } else {
                             parent_dir.join(m)
@@ -374,7 +375,7 @@ impl ProjectAnalyzer {
                     .iter()
                     .filter_map(|m| m.as_str())
                     .map(|m| {
-                        if m.starts_with("/") {
+                        if m.starts_with('/') {
                             PathBuf::from(m)
                         } else {
                             parent_dir.join(m)
@@ -418,7 +419,7 @@ impl ProjectAnalyzer {
         if let Some(deps) = workspace_dependencies
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, _) in deps_table.iter() {
+            for (key, _) in deps_table {
                 dependency_inheritance.insert(key.to_string(), true);
             }
         }
@@ -450,7 +451,7 @@ impl ProjectAnalyzer {
 
         let workspace_root = if let Some(workspace_path) = workspace_path {
             // Explicit workspace path
-            if workspace_path.starts_with("/") {
+            if workspace_path.starts_with('/') {
                 PathBuf::from(workspace_path)
             } else {
                 parent_dir.join(workspace_path)
@@ -485,7 +486,7 @@ impl ProjectAnalyzer {
         let mut inherited_fields = HashMap::new();
 
         // Check for fields using workspace inheritance
-        for (key, value) in document.as_table().iter() {
+        for (key, value) in document.as_table() {
             // Check for fields like version.workspace = true
             if key.contains(".workspace") {
                 inherited_fields.insert(key.replace(".workspace", ""), true);
@@ -494,7 +495,7 @@ impl ProjectAnalyzer {
 
             // Check for table entries with workspace = true
             if let Some(table) = value.as_table()
-                && table.get("workspace").and_then(|w| w.as_bool()) == Some(true)
+                && table.get("workspace").and_then(toml_edit::Item::as_bool) == Some(true)
             {
                 inherited_fields.insert(key.to_string(), true);
             }
@@ -507,7 +508,7 @@ impl ProjectAnalyzer {
         if let Some(deps) = document.get("dependencies")
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, value) in deps_table.iter() {
+            for (key, value) in deps_table {
                 if let Some(table) = value.as_table()
                     && table.get("workspace").is_some()
                 {
@@ -520,7 +521,7 @@ impl ProjectAnalyzer {
         if let Some(deps) = document.get("dev-dependencies")
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, value) in deps_table.iter() {
+            for (key, value) in deps_table {
                 if let Some(table) = value.as_table()
                     && table.get("workspace").is_some()
                 {
@@ -533,7 +534,7 @@ impl ProjectAnalyzer {
         if let Some(deps) = document.get("build-dependencies")
             && let Some(deps_table) = deps.as_table()
         {
-            for (key, value) in deps_table.iter() {
+            for (key, value) in deps_table {
                 if let Some(table) = value.as_table()
                     && table.get("workspace").is_some()
                 {
@@ -549,10 +550,10 @@ impl ProjectAnalyzer {
 /// Extract version from a TOML value
 fn extract_version_from_toml(value: &Item) -> Option<String> {
     match value {
-        Item::Value(value) => value.as_str().map(|version| version.to_string()),
+        Item::Value(value) => value.as_str().map(std::string::ToString::to_string),
         Item::Table(table) => table
             .get("version")
-            .and_then(|version| version.as_str().map(|version_str| version_str.to_string())),
+            .and_then(|version| version.as_str().map(std::string::ToString::to_string)),
         _ => None,
     }
 }

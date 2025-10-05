@@ -115,7 +115,6 @@ impl BatchUpdateOperation {
                     }
                     Ok(None) => {
                         // No update needed, continue to next dependency
-                        continue;
                     }
                     Err(e) => {
                         // Error updating, send the error

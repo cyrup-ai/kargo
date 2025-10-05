@@ -209,19 +209,6 @@ pub struct FunctionHeader {
     pub abi: Abi,
 }
 
-// For backward compatibility
-impl FunctionHeader {
-    pub fn is_const(&self) -> bool {
-        self.const_
-    }
-    pub fn is_unsafe(&self) -> bool {
-        self.unsafe_
-    }
-    pub fn is_async(&self) -> bool {
-        self.async_
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", content = "content")]
 pub enum Abi {
@@ -261,10 +248,16 @@ pub struct ExternBlock {
     pub items: Vec<Id>,
 }
 
-// Uses
+// Uses (Re-exports)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Use {
+    /// The full path being imported
     pub source: String,
+    /// The name bound in scope (may differ from source when using 'as')
+    pub name: String,
+    /// ID of the item being imported (None for primitive re-exports)
+    pub id: Option<Id>,
+    /// Whether this is a glob import (use `foo::`*)
     pub is_glob: bool,
 }
 

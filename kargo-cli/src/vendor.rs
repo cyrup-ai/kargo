@@ -8,13 +8,11 @@ use tokio::io::AsyncReadExt;
 
 /// Get the cargo home directory path
 ///
-/// Checks $CARGO_HOME environment variable, falling back to ~/.cargo if not set.
+/// Checks $`CARGO_HOME` environment variable, falling back to ~/.cargo if not set.
 /// Returns a String path to the cargo home directory.
 fn get_cargo_home() -> String {
     std::env::var("CARGO_HOME").unwrap_or_else(|_| {
-        dirs::home_dir()
-            .map(|p| p.join(".cargo").to_string_lossy().to_string())
-            .unwrap_or_else(|| ".cargo".to_string())
+        dirs::home_dir().map_or_else(|| ".cargo".to_string(), |p| p.join(".cargo").to_string_lossy().to_string())
     })
 }
 
@@ -27,7 +25,7 @@ async fn find_package_source(pkg: &Package) -> Result<PathBuf> {
     // Scan for the package in any registry index directory
     let mut entries = tokio::fs::read_dir(&registry_src)
         .await
-        .with_context(|| format!("Failed to read registry src directory: {:?}", registry_src))?;
+        .with_context(|| format!("Failed to read registry src directory: {registry_src:?}"))?;
 
     while let Some(entry) = entries.next_entry().await? {
         let index_dir = entry.path();
@@ -57,7 +55,7 @@ async fn find_package_source(pkg: &Package) -> Result<PathBuf> {
 async fn compute_sha256(path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(path)
         .await
-        .with_context(|| format!("Failed to open file for hashing: {:?}", path))?;
+        .with_context(|| format!("Failed to open file for hashing: {path:?}"))?;
 
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 8192];
@@ -66,7 +64,7 @@ async fn compute_sha256(path: &Path) -> Result<String> {
         let n = file
             .read(&mut buffer)
             .await
-            .with_context(|| format!("Failed to read file for hashing: {:?}", path))?;
+            .with_context(|| format!("Failed to read file for hashing: {path:?}"))?;
 
         if n == 0 {
             break;
@@ -76,7 +74,7 @@ async fn compute_sha256(path: &Path) -> Result<String> {
     }
 
     let hash = hasher.finalize();
-    Ok(format!("{:x}", hash))
+    Ok(format!("{hash:x}"))
 }
 
 /// Find the .crate file (tarball) in cargo's cache for checksum computation
@@ -90,8 +88,7 @@ async fn find_crate_file(pkg: &Package) -> Result<PathBuf> {
         .await
         .with_context(|| {
             format!(
-                "Failed to read registry cache directory: {:?}",
-                registry_cache
+                "Failed to read registry cache directory: {registry_cache:?}"
             )
         })?;
 
@@ -119,15 +116,15 @@ async fn find_crate_file(pkg: &Package) -> Result<PathBuf> {
     );
 }
 
-/// Recursively copy a directory using tokio::fs
+/// Recursively copy a directory using `tokio::fs`
 async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     tokio::fs::create_dir_all(dst)
         .await
-        .with_context(|| format!("Failed to create directory: {:?}", dst))?;
+        .with_context(|| format!("Failed to create directory: {dst:?}"))?;
 
     let mut entries = tokio::fs::read_dir(src)
         .await
-        .with_context(|| format!("Failed to read directory: {:?}", src))?;
+        .with_context(|| format!("Failed to read directory: {src:?}"))?;
 
     while let Some(entry) = entries.next_entry().await? {
         let file_type = entry.file_type().await?;
@@ -139,8 +136,7 @@ async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         } else {
             tokio::fs::copy(&src_path, &dst_path).await.with_context(|| {
                 format!(
-                    "Failed to copy file from {:?} to {:?}",
-                    src_path, dst_path
+                    "Failed to copy file from {src_path:?} to {dst_path:?}"
                 )
             })?;
         }
@@ -156,6 +152,7 @@ pub struct VendorManager {
 }
 
 impl VendorManager {
+    #[must_use] 
     pub fn new(vendor_path: PathBuf, dedupe: bool, events: EventBus) -> Self {
         Self {
             vendor_path,
@@ -218,7 +215,7 @@ impl VendorManager {
         // 3. Copy source files to vendor directory
         copy_dir_recursive(&source_dir, &dest_dir)
             .await
-            .with_context(|| format!("Failed to vendor package: {}", pkg_name))?;
+            .with_context(|| format!("Failed to vendor package: {pkg_name}"))?;
 
         // 4. Find the .crate file for checksum computation
         let crate_file = find_crate_file(pkg).await?;
@@ -226,7 +223,7 @@ impl VendorManager {
         // 5. Compute SHA256 of .crate file
         let checksum = compute_sha256(&crate_file)
             .await
-            .with_context(|| format!("Failed to compute checksum for: {}", pkg_name))?;
+            .with_context(|| format!("Failed to compute checksum for: {pkg_name}"))?;
 
         // 6. Generate .cargo-checksum.json
         let checksum_data = serde_json::json!({
@@ -240,9 +237,9 @@ impl VendorManager {
             serde_json::to_string_pretty(&checksum_data)?,
         )
         .await
-        .with_context(|| format!("Failed to write checksum file: {:?}", checksum_path))?;
+        .with_context(|| format!("Failed to write checksum file: {checksum_path:?}"))?;
 
-        log::info!("Vendored: {} -> {:?}", pkg_name, dest_dir);
+        log::info!("Vendored: {pkg_name} -> {dest_dir:?}");
 
         Ok(())
     }

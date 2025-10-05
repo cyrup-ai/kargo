@@ -1,8 +1,7 @@
 use kargo_plugin_api::{BoxFuture, ExecutionContext, PluginCommand};
-use kargo_plugin_native::{kargo_plugin, NativePlugin, PluginMetadata};
+use kargo_plugin_native::kargo_plugin;
 use clap::{Arg, Command};
 use anyhow::Result;
-use log::info;
 
 /// Your plugin implementation
 pub struct {{plugin_name | pascal_case}}Plugin;
@@ -11,27 +10,16 @@ impl {{plugin_name | pascal_case}}Plugin {
     pub fn new() -> Self {
         Self
     }
-    
-    async fn run_async(&self, ctx: ExecutionContext) -> Result<()> {
-        info!("Running {{plugin_name}} plugin");
-        
-        // Parse arguments from the matched args
-        let args = ctx.matched_args;
-        
-        // TODO: Implement your plugin logic here
-        println!("Hello from {{plugin_name}}!");
-        
-        if args.len() > 1 {
-            println!("Arguments received: {:?}", &args[1..]);
-        }
-        
-        Ok(())
-    }
 }
 
-// Implement the NativePlugin trait for better developer experience
-impl NativePlugin for {{plugin_name | pascal_case}}Plugin {
-    fn command(&self) -> Command {
+/// Modern async plugin interface.
+///
+/// PluginCommand::run() returns a Future that integrates with kargo's async runtime.
+/// Do NOT create your own runtime with Runtime::new() or use block_on().
+///
+/// For synchronous code, use tokio::task::spawn_blocking() within the async block.
+impl PluginCommand for {{plugin_name | pascal_case}}Plugin {
+    fn clap(&self) -> Command {
         Command::new("{{plugin_name}}")
             .about("{{plugin_description}}")
             .arg(
@@ -44,41 +32,31 @@ impl NativePlugin for {{plugin_name | pascal_case}}Plugin {
             // TODO: Add more arguments as needed
     }
     
-    fn execute(&self, args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
-        // Convert sync execute to async
-        let ctx = ExecutionContext {
-            matched_args: args,
-            current_dir: std::env::current_dir()?,
-            config_dir: dirs::config_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("kargo"),
-        };
-        
-        // Block on async execution
-        tokio::runtime::Runtime::new()?
-            .block_on(self.run_async(ctx))?;
-        
-        Ok(())
-    }
-    
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            name: "{{plugin_name}}".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            description: "{{plugin_description}}".to_string(),
-            author: "{{author_name}}".to_string(),
-        }
-    }
-}
-
-// Implement PluginCommand for kargo-cli compatibility
-impl PluginCommand for {{plugin_name | pascal_case}}Plugin {
-    fn clap(&self) -> Command {
-        self.command()
-    }
-    
     fn run(&self, ctx: ExecutionContext) -> BoxFuture {
-        Box::pin(self.run_async(ctx))
+        let cmd = self.clap();
+        Box::pin(async move {
+            // Parse arguments from ExecutionContext
+            let matches = cmd.get_matches_from(&ctx.matched_args);
+            
+            // TODO: Extract your arguments
+            let example_value = matches.get_one::<String>("example");
+            
+            // TODO: Implement your plugin logic here
+            println!("Hello from {{plugin_name}}!");
+            
+            if let Some(value) = example_value {
+                println!("Example argument: {}", value);
+            }
+            
+            // For blocking/sync code, use spawn_blocking:
+            // tokio::task::spawn_blocking(move || {
+            //     // Your sync code here
+            // })
+            // .await
+            // .map_err(|e| anyhow::anyhow!("Task join error: {}", e))??;
+            
+            Ok(())
+        })
     }
 }
 
