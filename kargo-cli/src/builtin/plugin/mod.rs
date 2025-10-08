@@ -26,6 +26,11 @@ pub fn command() -> Command {
                     .short('b')
                     .help("Git branch to use (default: main)")
                     .value_name("BRANCH"))
+                .arg(Arg::new("package")
+                    .long("package")
+                    .short('p')
+                    .help("Plugin package name within the repository (monorepo support)")
+                    .value_name("PACKAGE"))
         )
         .subcommand(
             Command::new("remove")
@@ -51,7 +56,8 @@ pub async fn execute(matches: &ArgMatches) -> Result<()> {
             let source = sub_m.get_one::<String>("source")
                 .ok_or_else(|| anyhow::anyhow!("Source argument is required"))?;
             let branch = sub_m.get_one::<String>("branch");
-            install::install_plugin(source, branch).await?;
+            let package = sub_m.get_one::<String>("package");
+            install::install_plugin(source, branch, package).await?;
         }
         Some(("remove", sub_m)) => {
             let source = sub_m.get_one::<String>("source")

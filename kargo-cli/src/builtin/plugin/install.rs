@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use super::{artifact, build, git, metadata, parser};
 use parser::SourceType;
 
-pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()> {
+pub async fn install_plugin(source: &str, branch: Option<&String>, package: Option<&String>) -> Result<()> {
     let branch_name = branch.map_or("main", std::string::String::as_str);
 
     let source_type = parser::parse_source(source)?;
@@ -68,46 +68,67 @@ pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()>
         anyhow::bail!("No cdylib plugins found in {}", repo_dir.display());
     }
 
-    let plugin_to_install = match &source_type {
-        SourceType::GitHub { plugin: Some(plugin_name), .. } => {
-            workspace_members
-                .iter()
-                .find(|pkg| pkg.name == *plugin_name)
-                .ok_or_else(|| {
-                    let available: Vec<&str> = workspace_members
-                        .iter()
-                        .map(|p| p.name.as_str())
-                        .collect();
-                    anyhow::anyhow!(
-                        "Plugin '{}' not found. Available plugins: {}",
-                        plugin_name,
-                        available.join(", ")
-                    )
-                })?
-        }
-        SourceType::LocalPath(_) | SourceType::GitHub { plugin: None, .. } => {
-            if workspace_members.len() > 1 {
-                let available: Vec<String> = workspace_members
+    // Determine which plugin to install using, in order of precedence:
+    // 1) --package flag
+    // 2) org/repo/plugin form from source
+    // 3) auto-resolve if there is exactly one plugin in the repo
+    let plugin_to_install = if let Some(pkg_name) = package {
+        workspace_members
+            .iter()
+            .find(|pkg| pkg.name == *pkg_name)
+            .ok_or_else(|| {
+                let available: Vec<&str> = workspace_members
                     .iter()
-                    .map(|p| match &source_type {
-                        SourceType::GitHub { org, repo, .. } => {
-                            format!("{}/{}/{}", org, repo, p.name)
-                        }
-                        SourceType::LocalPath(_) => p.name.to_string(),
-                    })
+                    .map(|p| p.name.as_str())
                     .collect();
-
-                anyhow::bail!(
-                    "Repository contains multiple plugins. Please specify which one:\n{}\n\nExample: kargo plugin install {}",
-                    available
-                        .iter()
-                        .map(|name| format!("  - {}", name))
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    available.first().ok_or_else(|| anyhow::anyhow!("No plugins available"))?
-                );
+                anyhow::anyhow!(
+                    "Plugin '{}' not found. Available plugins: {}",
+                    pkg_name,
+                    available.join(", ")
+                )
+            })?
+    } else {
+        match &source_type {
+            SourceType::GitHub { plugin: Some(plugin_name), .. } => {
+                workspace_members
+                    .iter()
+                    .find(|pkg| pkg.name == *plugin_name)
+                    .ok_or_else(|| {
+                        let available: Vec<&str> = workspace_members
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .collect();
+                        anyhow::anyhow!(
+                            "Plugin '{}' not found. Available plugins: {}",
+                            plugin_name,
+                            available.join(", ")
+                        )
+                    })?
             }
-            workspace_members.first().ok_or_else(|| anyhow::anyhow!("No plugins found"))?
+            SourceType::LocalPath(_) | SourceType::GitHub { plugin: None, .. } => {
+                if workspace_members.len() > 1 {
+                    let available: Vec<String> = workspace_members
+                        .iter()
+                        .map(|p| match &source_type {
+                            SourceType::GitHub { org, repo, .. } => {
+                                format!("{}/{}/{}", org, repo, p.name)
+                            }
+                            SourceType::LocalPath(_) => p.name.to_string(),
+                        })
+                        .collect();
+
+                    anyhow::bail!(
+                        "Repository contains multiple plugins. Please specify which one using --package or org/repo/plugin:\n{}\n\nExample: kargo plugin install {}",
+                        available
+                            .iter()
+                            .map(|name| format!("  - {}", name))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        available.first().ok_or_else(|| anyhow::anyhow!("No plugins available"))?
+                    );
+                }
+                workspace_members.first().ok_or_else(|| anyhow::anyhow!("No plugins found"))?
+            }
         }
     };
 
