@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use toml::Value;
 use crate::models::UnusedDependency;
+use syn::{self, visit::Visit};
 
 // ============================================================================
 // BASIC DEPENDENCY ANALYSIS (all files together)
@@ -47,13 +48,57 @@ pub fn analyze_unused_dependencies(
     // Find used dependencies by scanning all source files
     let used_deps = collect_used_deps(all_file_contents);
 
+    // Helper to build a minimal TOML snippet for a dep in a section
+    fn build_dep_snippet(toml: &Value, section: &str, name: &str) -> String {
+        let key = match section {
+            "[dependencies]" => "dependencies",
+            "[dev-dependencies]" => "dev-dependencies",
+            "[build-dependencies]" => "build-dependencies",
+            _ => return String::new(),
+        };
+        if let Some(table) = toml.get(key).and_then(|v| v.as_table()) {
+            if let Some(val) = table.get(name) {
+                // Construct a minimal doc with just this section and one entry
+                let mut sec = toml::map::Map::new();
+                sec.insert(name.to_string(), val.clone());
+                let mut root = toml::map::Map::new();
+                root.insert(key.to_string(), Value::Table(sec));
+                match toml::to_string(&Value::Table(root)) {
+                    Ok(s) => s,
+                    Err(_) => format!("{section}\n{name} = ...\n"),
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    }
+
+    fn to_unified_diff(snippet: &str) -> String {
+        let mut out = String::new();
+        for line in snippet.lines() {
+            out.push_str("- ");
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    }
+
     // Find unused: dependencies that aren't in the used set
     Ok(deps.into_iter()
         .filter(|(name, _)| !used_deps.contains(&normalize_crate_name(name)))
-        .map(|(name, section)| UnusedDependency {
-            name,
-            cargo_toml: cargo_toml.to_string_lossy().to_string(),
-            section,
+        .map(|(name, section)| {
+            let raw = build_dep_snippet(&toml, &section, &name);
+            let snippet = raw.trim_end().to_string();
+            let toml_diff = to_unified_diff(&snippet);
+            UnusedDependency {
+                name,
+                cargo_toml: cargo_toml.to_string_lossy().to_string(),
+                section,
+                toml_snippet: snippet,
+                toml_diff,
+            }
         })
         .collect())
 }
@@ -75,19 +120,53 @@ pub fn normalize_crate_name(name: &str) -> String {
     name.replace('-', "_")
 }
 
-/// Collect all used dependency names from source files
+/// Visitor to collect root crate usages from various syntax positions
+struct CrateUseCollector<'a> {
+    used: &'a mut HashSet<String>,
+}
+
+impl<'a> CrateUseCollector<'a> {
+    fn add_path(&mut self, path: &syn::Path) {
+        if let Some(seg) = path.segments.first() {
+            self.used.insert(seg.ident.to_string());
+        }
+    }
+}
+
+impl<'a, 'ast> syn::visit::Visit<'ast> for CrateUseCollector<'a> {
+    fn visit_expr_path(&mut self, i: &'ast syn::ExprPath) {
+        self.add_path(&i.path);
+        syn::visit::visit_expr_path(self, i);
+    }
+    fn visit_type_path(&mut self, i: &'ast syn::TypePath) {
+        // TypePath carries a Path; record its root segment
+        self.add_path(&i.path);
+        syn::visit::visit_type_path(self, i);
+    }
+    fn visit_macro(&mut self, i: &'ast syn::Macro) {
+        // syn 2.x Macro has a Path directly
+        self.add_path(&i.path);
+        syn::visit::visit_macro(self, i);
+    }
+    fn visit_attribute(&mut self, i: &'ast syn::Attribute) {
+        // Capture crate names referenced in attributes like #[tokio::test]
+        self.add_path(&i.path());
+        syn::visit::visit_attribute(self, i);
+    }
+    fn visit_item_use(&mut self, i: &'ast syn::ItemUse) {
+        extract_crate_names(&i.tree, self.used);
+        syn::visit::visit_item_use(self, i);
+    }
+}
+
+/// Collect all used dependency names from source files (enhanced)
 fn collect_used_deps(files: &[(String, String)]) -> HashSet<String> {
     let mut used = HashSet::new();
 
     for (_path, content) in files {
-        // Parse file as Rust source
         if let Ok(ast) = syn::parse_file(content) {
-            // Find all use statements
-            for item in ast.items {
-                if let syn::Item::Use(use_item) = item {
-                    extract_crate_names(&use_item.tree, &mut used);
-                }
-            }
+            let mut visitor = CrateUseCollector { used: &mut used };
+            visitor.visit_file(&ast);
         }
     }
 
@@ -156,16 +235,41 @@ pub fn analyze_unused_dependencies_with_context(
 
     let mut unused = Vec::new();
 
+    // Local helper to build a minimal TOML snippet for a dep in a section
+    fn build_dep_snippet_ctx(toml: &Value, section: &str, name: &str) -> String {
+        let key = match section {
+            "[dependencies]" => "dependencies",
+            "[dev-dependencies]" => "dev-dependencies",
+            "[build-dependencies]" => "build-dependencies",
+            _ => return String::new(),
+        };
+        if let Some(table) = toml.get(key).and_then(|v| v.as_table()) {
+            if let Some(val) = table.get(name) {
+                let mut sec = toml::map::Map::new();
+                sec.insert(name.to_string(), val.clone());
+                let mut root = toml::map::Map::new();
+                root.insert(key.to_string(), Value::Table(sec));
+                return toml::to_string(&Value::Table(root)).unwrap_or_else(|_| format!("{section}\n{name} = ...\n"));
+            }
+        }
+        String::new()
+    }
+
     // Check [dependencies] - must be used in src/
     if let Some(dependencies) = toml.get("dependencies").and_then(|v| v.as_table()) {
         let used = collect_used_deps(src_files);
 
         for (name, _) in dependencies {
             if !used.contains(&normalize_crate_name(name)) {
+                let section = "[dependencies]".to_string();
+                let snippet = build_dep_snippet_ctx(&toml, &section, name);
+                let toml_diff = snippet.lines().map(|l| format!("- {}\n", l)).collect::<String>();
                 unused.push(UnusedDependency {
                     name: name.clone(),
                     cargo_toml: cargo_toml.to_string_lossy().to_string(),
-                    section: "[dependencies]".to_string(),
+                    section,
+                    toml_snippet: snippet,
+                    toml_diff,
                 });
             }
         }
@@ -177,10 +281,15 @@ pub fn analyze_unused_dependencies_with_context(
 
         for (name, _) in dev_deps {
             if !used.contains(&normalize_crate_name(name)) {
+                let section = "[dev-dependencies]".to_string();
+                let snippet = build_dep_snippet_ctx(&toml, &section, name);
+                let toml_diff = snippet.lines().map(|l| format!("- {}\n", l)).collect::<String>();
                 unused.push(UnusedDependency {
                     name: name.clone(),
                     cargo_toml: cargo_toml.to_string_lossy().to_string(),
-                    section: "[dev-dependencies]".to_string(),
+                    section,
+                    toml_snippet: snippet,
+                    toml_diff,
                 });
             }
         }
@@ -194,10 +303,15 @@ pub fn analyze_unused_dependencies_with_context(
 
         for (name, _) in build_deps {
             if !used.contains(&normalize_crate_name(name)) {
+                let section = "[build-dependencies]".to_string();
+                let snippet = build_dep_snippet_ctx(&toml, &section, name);
+                let toml_diff = snippet.lines().map(|l| format!("- {}\n", l)).collect::<String>();
                 unused.push(UnusedDependency {
                     name: name.clone(),
                     cargo_toml: cargo_toml.to_string_lossy().to_string(),
-                    section: "[build-dependencies]".to_string(),
+                    section,
+                    toml_snippet: snippet,
+                    toml_diff,
                 });
             }
         }

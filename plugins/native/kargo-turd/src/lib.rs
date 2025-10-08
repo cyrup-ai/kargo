@@ -87,6 +87,62 @@ pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Generate a single task file for Cargo.toml aggregating all unused dependencies
+fn generate_cargo_toml_task_sync(
+    project_name: &str,
+    cargo_toml_path: &std::path::Path,
+    unused_deps: &[UnusedDependency],
+    config: &Config,
+) -> anyhow::Result<()> {
+    use std::path::Path;
+    use std::env;
+    use std::fs;
+
+    // Load Cargo.toml contents to compute a simple line count (non-blank lines)
+    let content = fs::read_to_string(cargo_toml_path).unwrap_or_default();
+    let loc = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count() as u32;
+
+    let context_builder = ContextBuilder {
+        project_name: project_name.to_string(),
+        file_path: cargo_toml_path.to_path_buf(),
+        absolute_path: env::current_dir()?,
+    };
+
+    let violations = ViolationData {
+        tier1_violations: vec![],
+        tier2_violations: vec![],
+        tier3_violations: vec![],
+        panic_patterns: vec![],
+        tests_in_src: vec![],
+        orphaned_modules: vec![],
+        orphaned_methods: vec![],
+        unused_dependencies: unused_deps.to_vec(),
+    };
+
+    let context = context_builder.build(violations, loc);
+    let tier = context.highest_tier();
+    let file_hash = context.file_hash.clone();
+
+    let template_dir = Path::new("./prompt");
+    let rendered = render_task_file(context, template_dir)?;
+
+    let file_name = "Cargo.toml".to_string();
+
+    write_task_file(
+        &rendered,
+        &config.output_dir,
+        project_name,
+        &file_name,
+        &file_hash,
+        tier,
+    )?;
+
+    Ok(())
+}
+
 /// Analyze a single project (SYNC version)
 fn analyze_project_sync(project: &Project, config: &Config) -> anyhow::Result<()> {
     use log::info;
@@ -128,6 +184,7 @@ fn analyze_project_sync(project: &Project, config: &Config) -> anyhow::Result<()
     let task_files_generated = generate_task_files_sync(
         &results,
         &project.name,
+        &project.cargo_toml_path,
         &orphaned_methods,
         &unused_deps,
         config,
@@ -188,23 +245,36 @@ fn analyze_dependencies_sync(project: &Project) -> anyhow::Result<Vec<UnusedDepe
 fn generate_task_files_sync(
     results: &[FileAnalysisResult],
     project_name: &str,
+    cargo_toml_path: &std::path::Path,
     orphaned_methods: &std::collections::HashMap<String, Vec<OrphanedMethod>>,
     unused_deps: &[UnusedDependency],
     config: &Config,
 ) -> anyhow::Result<usize> {
     let mut count = 0;
 
+    // First, emit per-source-file task files WITHOUT unused dependencies
     for result in results {
         if should_generate_task_file_sync(result, orphaned_methods) {
             generate_single_task_file_sync(
                 result,
                 project_name,
                 orphaned_methods,
-                unused_deps,
+                &[], // do not attach unused deps to .rs task files
                 config,
             )?;
             count += 1;
         }
+    }
+
+    // Then, if there are unused dependencies, emit ONE dedicated Cargo.toml task
+    if !unused_deps.is_empty() {
+        generate_cargo_toml_task_sync(
+            project_name,
+            cargo_toml_path,
+            unused_deps,
+            config,
+        )?;
+        count += 1;
     }
 
     Ok(count)
@@ -258,6 +328,7 @@ fn generate_single_task_file_sync(
         tests_in_src: result.tests_in_src.clone(),
         orphaned_modules: vec![],
         orphaned_methods: file_orphaned_methods,
+        // Do not include unused dependencies in .rs task files
         unused_dependencies: unused_deps.to_vec(),
     };
 

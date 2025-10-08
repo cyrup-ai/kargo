@@ -45,6 +45,7 @@ proc-macro2 = { workspace = true, features = ["span-locations"] }
 
 # Template rendering for task file generation
 minijinja = { version = "2", features = ["loader"] }
+include_dir = "0.7"
 chrono = "0.4"
 
 # File hashing for unique task file names

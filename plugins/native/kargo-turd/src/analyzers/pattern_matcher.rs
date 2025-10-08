@@ -80,6 +80,11 @@ pub fn find_comment_violations(content: &str, tier: u8) -> Vec<Violation> {
     let mut violations = Vec::new();
 
     for (line_num, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        // Only flag comment lines to avoid code/string false positives
+        if !(trimmed.starts_with("//") || trimmed.starts_with("///")) {
+            continue;
+        }
         for pattern in patterns {
             // Find first match on this line (don't report duplicates)
             if let Some(m) = pattern.find(line) {
@@ -237,6 +242,8 @@ pub fn find_variable_naming_violations(content: &str, tier: u8) -> Vec<Violation
 
 lazy_static! {
     static ref HARDCODED_URL: Regex = compile_regex(r"https?://");
+    // Treat tokenized URLs like https://github.com/{org}/{repo} as non-hardcoded (allowed)
+    static ref TOKENIZED_URL: Regex = compile_regex(r"https?://[^\s]*\{[^}]+\}[^\s]*");
     static ref HARDCODED_IP: Regex = compile_regex(r"\b(?:\d{1,3}\.){3}\d{1,3}\b");
     static ref HARDCODED_PORT: Regex = compile_regex(r":\d{4,5}\b");
 }
@@ -251,14 +258,20 @@ pub fn find_hardcoded_values(content: &str) -> Vec<Violation> {
     for (line_num, line) in content.lines().enumerate() {
         // Check for URLs
         if HARDCODED_URL.is_match(line) {
-            // Skip if this is a comment (common in docs)
-            if !line.trim_start().starts_with("//") && !line.trim_start().starts_with("///") {
-                violations.push(Violation {
-                    line_number: line_num + 1,
-                    search_term: "hardcoded URL".to_string(),
-                    method_name: String::new(),
-                    context: extract_context(content, line_num),
-                });
+            // Allow tokenized URLs like https://github.com/{org}/{repo}
+            if TOKENIZED_URL.is_match(line) {
+                // Explicitly permitted pattern; do not flag
+                // Continue to next line without recording a violation
+            } else {
+                // Skip if this is a comment (common in docs)
+                if !line.trim_start().starts_with("//") && !line.trim_start().starts_with("///") {
+                    violations.push(Violation {
+                        line_number: line_num + 1,
+                        search_term: "hardcoded URL".to_string(),
+                        method_name: String::new(),
+                        context: extract_context(content, line_num),
+                    });
+                }
             }
         }
 

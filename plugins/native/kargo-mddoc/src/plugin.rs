@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 use crate::{Config, DocGenerator};
 use anyhow::anyhow;
 use clap::{Arg, Command};

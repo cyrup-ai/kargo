@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use cargo_toml::Manifest;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use jwalk::WalkDir;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,66 +10,48 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+// Re-export for plugin use
+pub mod plugin;
+
+/// Project type classification
 #[derive(Debug, Serialize, Deserialize)]
-enum ProjectType {
+pub enum ProjectType {
     Binary,
     Library,
     Both,
     Unknown,
 }
 
+/// Project build status
 #[derive(Debug, Serialize, Deserialize)]
-enum ProjectStatus {
+pub enum ProjectStatus {
     Working,
     Broken,
     Unknown,
 }
 
+/// Comprehensive project metadata
 #[derive(Debug, Serialize, Deserialize)]
-struct ProjectInfo {
-    path: String,
-    name: String,
-    version: String,
-    description: Option<String>,
-    project_type: ProjectType,
-    status: ProjectStatus,
-    dependencies: Vec<String>,
-    tags: Vec<String>,
-    is_workspace: bool,
-    workspace_members: Vec<String>,
-    indicators: HashMap<String, String>,
+pub struct ProjectInfo {
+    pub path: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub project_type: ProjectType,
+    pub status: ProjectStatus,
+    pub dependencies: Vec<String>,
+    pub tags: Vec<String>,
+    pub is_workspace: bool,
+    pub workspace_members: Vec<String>,
+    pub indicators: HashMap<String, String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    println!("Forge Inventory Tool - Scanning projects in /home/ubuntu/forge");
-
-    // Step 1: Find all Cargo.toml files
-    let cargo_toml_paths = find_cargo_toml_files("/home/ubuntu/forge")?;
-    println!("Found {} Cargo.toml files", cargo_toml_paths.len());
-
-    // Take only the first 10 projects for testing
-    let limited_paths: Vec<_> = cargo_toml_paths.into_iter().take(10).collect();
-    println!("Limited to 10 projects for testing");
-
-    // Step 2: Extract project information in parallel
-    let mp = MultiProgress::new();
-    let projects = extract_project_info(&limited_paths, &mp)?;
-
-    // Step 3: Check project status concurrently
-    let projects = check_project_status(projects).await?;
-
-    // Step 4: Analyze project relationships
-    let projects_with_relationships = analyze_relationships(projects);
-
-    // Step 5: Generate index.yaml
-    generate_index_yaml(&projects_with_relationships)?;
-
-    println!("✅ Completed inventory process. Results saved to index.yaml");
-    Ok(())
-}
-
-fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
+/// Find all Cargo.toml files in a directory tree
+///
+/// # Errors
+///
+/// Returns an error if directory traversal fails
+pub fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
     let pb = ProgressBar::new_spinner();
     pb.set_message("Scanning for Cargo.toml files...");
     pb.enable_steady_tick(Duration::from_millis(100));
@@ -77,16 +59,15 @@ fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
     let mut cargo_toml_paths = Vec::new();
     for entry in WalkDir::new(root_path)
         .follow_links(true)
-        .parallelism(jwalk::Parallelism::RayonNewPool(0)) // Use available cores
+        .parallelism(jwalk::Parallelism::RayonNewPool(0))
         .into_iter()
         .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
-        if path.file_name().is_some_and(|f| f == "Cargo.toml") {
-            // Skip nested Cargo.toml files in target directories
-            if !path.to_string_lossy().contains("/target/") {
-                cargo_toml_paths.push(path);
-            }
+        if path.file_name().is_some_and(|f| f == "Cargo.toml")
+            && !path.to_string_lossy().contains("/target/")
+        {
+            cargo_toml_paths.push(path);
         }
     }
 
@@ -94,13 +75,16 @@ fn find_cargo_toml_files(root_path: &str) -> Result<Vec<PathBuf>> {
     Ok(cargo_toml_paths)
 }
 
-fn extract_project_info(
-    cargo_toml_paths: &[PathBuf],
-    mp: &MultiProgress,
-) -> Result<Vec<ProjectInfo>> {
+/// Extract project information from Cargo.toml files in parallel
+///
+/// # Errors
+///
+/// Returns an error if progress bar template is invalid, or if the Arc/Mutex
+/// operations fail during parallel extraction
+pub fn extract_project_info(cargo_toml_paths: &[PathBuf]) -> Result<Vec<ProjectInfo>> {
     println!("Extracting project information...");
 
-    let pb = mp.add(ProgressBar::new(cargo_toml_paths.len() as u64));
+    let pb = ProgressBar::new(cargo_toml_paths.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template(
@@ -123,7 +107,7 @@ fn extract_project_info(
                 Err(e) => eprintln!("Failed to lock projects mutex: {e}"),
             }
         } else {
-            println!("Warning: Failed to extract info from {path:?}");
+            println!("Warning: Failed to extract info from {}", path.display());
         }
 
         pb.inc(1);
@@ -131,15 +115,13 @@ fn extract_project_info(
 
     pb.finish_with_message("Project information extracted");
 
-    match Arc::try_unwrap(projects) {
-        Ok(mutex) => match mutex.into_inner() {
+    Arc::try_unwrap(projects).map_or_else(
+        |_| Err(anyhow!("Failed to unwrap Arc - still has multiple references")),
+        |mutex| match mutex.into_inner() {
             Ok(data) => Ok(data),
             Err(e) => Err(anyhow!("Failed to extract data from mutex: {e}")),
         },
-        Err(_) => Err(anyhow!(
-            "Failed to unwrap Arc - still has multiple references"
-        )),
-    }
+    )
 }
 
 fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
@@ -157,37 +139,32 @@ fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
         .map(std::string::ToString::to_string)
         .collect();
 
-    // Handle workspace members
-    let workspace_members = if let Some(workspace) = &manifest.workspace {
-        workspace.members.clone()
-    } else {
-        Vec::new()
-    };
+    let workspace_members = manifest
+        .workspace
+        .as_ref()
+        .map_or_else(Vec::new, |workspace| workspace.members.clone());
 
-    // Extract version from package.version (Inheritable<String>)
     let version = match &package.version {
         cargo_toml::Inheritable::Set(v) => v.clone(),
         cargo_toml::Inheritable::Inherited => "0.0.0".to_string(),
     };
 
-    // Extract description from package.description (Option<Inheritable<String>>)
     let description = package.description.as_ref().and_then(|desc| match desc {
         cargo_toml::Inheritable::Set(v) => Some(v.clone()),
         cargo_toml::Inheritable::Inherited => None,
     });
 
     Ok(ProjectInfo {
-        path: match path.parent() {
-            Some(p) => p.to_string_lossy().to_string(),
-            None => ".".to_string(),
-        },
+        path: path
+            .parent()
+            .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string()),
         name: package.name.clone(),
         version,
         description,
-        project_type: ProjectType::Unknown, // Will be set later
-        status: ProjectStatus::Unknown,     // Will be set later
+        project_type: ProjectType::Unknown,
+        status: ProjectStatus::Unknown,
         dependencies,
-        tags: Vec::new(), // Can be enhanced later
+        tags: Vec::new(),
         is_workspace: manifest.workspace.is_some(),
         workspace_members,
         indicators: HashMap::new(),
@@ -195,7 +172,9 @@ fn extract_single_project_info(path: &Path) -> Result<ProjectInfo> {
 }
 
 fn determine_project_type(cargo_toml_path: &Path) -> ProjectType {
-    let Some(parent_dir) = cargo_toml_path.parent() else { return ProjectType::Unknown };
+    let Some(parent_dir) = cargo_toml_path.parent() else {
+        return ProjectType::Unknown;
+    };
 
     let has_main = parent_dir.join("src/main.rs").exists();
     let has_lib = parent_dir.join("src/lib.rs").exists();
@@ -208,10 +187,14 @@ fn determine_project_type(cargo_toml_path: &Path) -> ProjectType {
     }
 }
 
-async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectInfo>> {
+/// Check build status of projects by running cargo check
+///
+/// # Errors
+///
+/// Returns an error if the Arc/Mutex operations fail during parallel status checking
+pub async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectInfo>> {
     println!("Checking project status...");
 
-    // Limit concurrent cargo check operations
     let semaphore = Arc::new(Semaphore::new(4));
     let updated_projects = Arc::new(Mutex::new(Vec::new()));
 
@@ -247,15 +230,13 @@ async fn check_project_status(projects: Vec<ProjectInfo>) -> Result<Vec<ProjectI
     }
 
     println!("Project status check completed");
-    match Arc::try_unwrap(updated_projects) {
-        Ok(mutex) => match mutex.into_inner() {
+    Arc::try_unwrap(updated_projects).map_or_else(
+        |_| Err(anyhow!("Failed to unwrap Arc - still has multiple references")),
+        |mutex| match mutex.into_inner() {
             Ok(data) => Ok(data),
             Err(e) => Err(anyhow!("Failed to extract data from mutex: {e}")),
         },
-        Err(_) => Err(anyhow!(
-            "Failed to unwrap Arc - still has multiple references"
-        )),
-    }
+    )
 }
 
 async fn check_single_project_status(project_path: &str) -> ProjectStatus {
@@ -277,17 +258,17 @@ async fn check_single_project_status(project_path: &str) -> ProjectStatus {
     }
 }
 
-fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
+/// Analyze project relationships (workspaces, dependencies)
+#[must_use]
+pub fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
     println!("Analyzing project relationships...");
 
-    // Build lookup maps
     let project_map: HashMap<String, (usize, String)> = projects
         .iter()
         .enumerate()
         .map(|(i, p)| (p.name.clone(), (i, p.path.clone())))
         .collect();
 
-    // Build dependency usage graph: dependency -> list of projects using it
     let mut dep_usage: HashMap<String, Vec<String>> = HashMap::new();
     for project in &projects {
         for dep in &project.dependencies {
@@ -298,46 +279,37 @@ fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
         }
     }
 
-    // Calculate shared dependencies (used by 2+ projects)
     let shared_deps: Vec<String> = dep_usage
         .iter()
         .filter(|(_, users)| users.len() >= 2)
         .map(|(dep, _)| dep.clone())
         .collect();
 
-    // Process each project
     for i in 0..projects.len() {
-        // Handle workspace roots
         if projects[i].is_workspace {
             let member_count = projects[i].workspace_members.len();
-            projects[i].indicators.insert(
-                "workspace_members".to_string(),
-                member_count.to_string(),
-            );
+            projects[i]
+                .indicators
+                .insert("workspace_members".to_string(), member_count.to_string());
 
-            // Link members to this workspace root
             let root_path = projects[i].path.clone();
             for member_name in &projects[i].workspace_members.clone() {
                 if let Some(&(member_idx, _)) = project_map.get(member_name) {
-                    projects[member_idx].indicators.insert(
-                        "workspace_root".to_string(),
-                        root_path.clone(),
-                    );
+                    projects[member_idx]
+                        .indicators
+                        .insert("workspace_root".to_string(), root_path.clone());
                 }
             }
         }
 
-        // Add reverse dependencies (who depends on this project)
         if let Some(dependents) = dep_usage.get(&projects[i].name)
             && !dependents.is_empty()
         {
-            projects[i].indicators.insert(
-                "dependents".to_string(),
-                dependents.join(","),
-            );
+            projects[i]
+                .indicators
+                .insert("dependents".to_string(), dependents.join(","));
         }
 
-        // Add shared dependencies this project uses
         let project_shared_deps: Vec<String> = projects[i]
             .dependencies
             .iter()
@@ -346,22 +318,27 @@ fn analyze_relationships(mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
             .collect();
 
         if !project_shared_deps.is_empty() {
-            projects[i].indicators.insert(
-                "shared_deps".to_string(),
-                project_shared_deps.join(","),
-            );
+            projects[i]
+                .indicators
+                .insert("shared_deps".to_string(), project_shared_deps.join(","));
         }
     }
 
     projects
 }
 
-fn generate_index_yaml(projects: &[ProjectInfo]) -> Result<()> {
-    println!("Generating index.yaml...");
+/// Generate YAML inventory file
+///
+/// # Errors
+///
+/// Returns an error if YAML serialization fails or if writing to the output file fails
+pub fn generate_index_yaml(projects: &[ProjectInfo], output_path: &Path) -> Result<()> {
+    println!("Generating inventory...");
 
     let yaml = serde_yaml_ok::to_string(projects)?;
-    std::fs::write("index.yaml", yaml)?;
+    std::fs::write(output_path, yaml)?;
 
-    println!("✅ index.yaml generated with {} projects", projects.len());
+    println!("✅ Inventory generated at {}", output_path.display());
+    println!("   Total projects: {}", projects.len());
     Ok(())
 }

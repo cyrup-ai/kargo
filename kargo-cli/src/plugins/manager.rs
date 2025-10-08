@@ -14,6 +14,7 @@ use std::process::Command;
 use kargo_plugin_api::{CreateFn, PluginCommand};
 
 use super::{trait_scanner, wasm_adapter::WasmPluginAdapter};
+use crate::builtin::plugin::artifact::find_existing_lib;
 
 pub struct PluginManager {
     search_paths: Vec<PathBuf>,
@@ -194,16 +195,86 @@ impl PluginManager {
         let needs_build = {
             let artifact = find_existing_lib(dir)?;
             match artifact {
-                None => true,
+                None => {
+                    log::debug!("No artifact found for {}, needs build", dir.display());
+                    true
+                }
                 Some(ref art) => {
-                    let src_max = fs::read_dir(dir)?
-                        .filter_map(std::result::Result::ok)
-                        .flat_map(|e| e.metadata().and_then(|m| m.modified()))
+                    // Get artifact modification time
+                    let art_modified = match fs::metadata(art).and_then(|m| m.modified()) {
+                        Ok(time) => Some(time),
+                        Err(e) => {
+                            log::warn!("Cannot read artifact metadata {}: {}", art.display(), e);
+                            None
+                        }
+                    };
+
+                    // Check Cargo.toml modification time
+                    let cargo_toml = dir.join("Cargo.toml");
+                    let cargo_modified = match fs::metadata(&cargo_toml).and_then(|m| m.modified()) {
+                        Ok(time) => Some(time),
+                        Err(e) => {
+                            log::warn!("Cannot read Cargo.toml metadata {}: {}", cargo_toml.display(), e);
+                            None
+                        }
+                    };
+
+                    // Recursively check all source files
+                    let src_dir = dir.join("src");
+                    let src_modified = if src_dir.exists() {
+                        jwalk::WalkDir::new(&src_dir)
+                            .into_iter()
+                            .filter_map(|entry_result| {
+                                match entry_result {
+                                    Ok(entry) if entry.file_type().is_file() => {
+                                        // Get modification time for this file
+                                        match entry.metadata() {
+                                            Ok(metadata) => match metadata.modified() {
+                                                Ok(time) => Some(time),
+                                                Err(e) => {
+                                                    log::warn!("Cannot read file metadata {}: {}", entry.path().display(), e);
+                                                    None
+                                                }
+                                            },
+                                            Err(e) => {
+                                                log::warn!("Cannot read file metadata {}: {}", entry.path().display(), e);
+                                                None
+                                            }
+                                        }
+                                    }
+                                    Ok(_) => None,  // Directory, skip
+                                    Err(e) => {
+                                        log::warn!("Error walking source directory {}: {}", src_dir.display(), e);
+                                        None
+                                    }
+                                }
+                            })
+                            .max()  // Find the newest modification time
+                    } else {
+                        None
+                    };
+
+                    // Take the newest of Cargo.toml or any source file
+                    let newest_source = [cargo_modified, src_modified]
+                        .into_iter()
+                        .flatten()
                         .max();
-                    let art_mod = fs::metadata(art).and_then(|m| m.modified()).ok();
-                    match src_max.zip(art_mod) {
-                        Some((s, o)) => s > o,
-                        None => true,
+
+                    // Compare and log decision
+                    match newest_source.zip(art_modified) {
+                        Some((s, a)) => {
+                            let needs = s > a;
+                            if needs {
+                                log::debug!("Source newer than artifact for {}, needs rebuild", dir.display());
+                            } else {
+                                log::debug!("Artifact up to date for {}, skipping build", dir.display());
+                            }
+                            needs
+                        }
+                        None => {
+                            log::debug!("Cannot determine staleness for {}, rebuilding to be safe", dir.display());
+                            true
+                        }
                     }
                 }
             }
@@ -268,74 +339,5 @@ impl PluginManager {
         self.plugins
             .insert(adapt.clap().get_name().to_owned(), Box::new(adapt));
         Ok(())
-    }
-}
-
-/* ---------- helper: locate compiled library ---------- */
-fn find_existing_lib(dir: &Path) -> Result<Option<PathBuf>> {
-    // First try the local target directory
-    let mut release = dir.join("target").join("release");
-
-    // If not found, try the workspace target directory
-    if !release.is_dir() {
-        // Walk up to find workspace root (where Cargo.lock exists)
-        let mut workspace_root = dir.to_path_buf();
-        while !workspace_root.join("Cargo.lock").exists() && workspace_root.parent().is_some() {
-            workspace_root = workspace_root
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("Workspace root has no parent directory"))?
-                .to_path_buf();
-        }
-        release = workspace_root.join("target").join("release");
-    }
-
-    if !release.is_dir() {
-        return Ok(None);
-    }
-
-    let (prefix, ext) = if cfg!(windows) {
-        ("", "dll")
-    } else if cfg!(target_os = "macos") {
-        ("lib", "dylib")
-    } else {
-        ("lib", "so")
-    };
-
-    // Get the crate name from Cargo.toml
-    let cargo_toml = dir.join("Cargo.toml");
-    let crate_name = if cargo_toml.exists() {
-        let content = fs::read_to_string(&cargo_toml)?;
-        // Simple extraction of lib.name or package.name
-        if let Some(lib_name) = content
-            .lines()
-            .skip_while(|l| !l.starts_with("[lib]"))
-            .skip(1)
-            .find(|l| l.trim_start().starts_with("name"))
-            .and_then(|l| l.split('=').nth(1))
-            .map(|s| s.trim().trim_matches('"'))
-        {
-            lib_name.to_string()
-        } else if let Some(pkg_name) = content
-            .lines()
-            .find(|l| l.trim_start().starts_with("name") && !l.contains('['))
-            .and_then(|l| l.split('=').nth(1))
-            .map(|s| s.trim().trim_matches('"'))
-        {
-            pkg_name.replace('-', "_")
-        } else {
-            return Ok(None);
-        }
-    } else {
-        return Ok(None);
-    };
-
-    // Look for the specific library file
-    let lib_name = format!("{prefix}{crate_name}.{ext}");
-    let lib_path = release.join(&lib_name);
-
-    if lib_path.exists() {
-        Ok(Some(lib_path))
-    } else {
-        Ok(None)
     }
 }

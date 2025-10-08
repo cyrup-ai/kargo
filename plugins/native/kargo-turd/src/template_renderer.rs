@@ -1,9 +1,13 @@
 use minijinja::{Environment, path_loader, context};
 use std::path::{Path, PathBuf};
 use std::fs;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
+use include_dir::Dir;
 use crate::models::{TemplateContext, Violation, PanicPattern, TestInSrc, OrphanedModule, OrphanedMethod, UnusedDependency, compute_file_hash};
+
+// Embed the entire prompt/ directory so templates are always available at runtime.
+static PROMPT_DIR: Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/prompt");
 
 // ============================================================================
 // TEMPLATE RENDERING
@@ -27,9 +31,35 @@ pub fn render_task_file(ctx: TemplateContext, template_dir: &Path) -> Result<Str
     // This allows {% include "tier1.j2.md" %} to work
     env.set_loader(path_loader(template_dir));
     
-    // Load main template
-    let tmpl = env.get_template("master.j2.md")?;
-    
+    // Load main template; if not found on disk, populate env from embedded PROMPT_DIR
+    let tmpl = match env.get_template("master.j2.md") {
+        Ok(t) => t,
+        Err(e) => {
+            // Populate env with embedded templates (relative paths)
+            for file in PROMPT_DIR.files() {
+                let rel = file
+                    .path()
+                    .strip_prefix(PROMPT_DIR.path())
+                    .unwrap_or(file.path());
+                let name_path = rel;
+                let name = name_path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("Non-UTF8 template path: {}", name_path.display()))?;
+                // Only include Jinja template files
+                if !name.ends_with(".j2.md") {
+                    continue;
+                }
+                let contents = file
+                    .contents_utf8()
+                    .with_context(|| format!("Non-UTF8 template: {}", file.path().display()))?;
+                env.add_template(name, contents)
+                    .with_context(|| format!("Failed adding embedded template {}", name))?;
+            }
+            env.get_template("master.j2.md")
+                .with_context(|| format!("Embedded template 'master.j2.md' missing after load; prior error: {e}"))?
+        }
+    };
+
     // Render with context
     // context! macro creates a Context object with named values
     let rendered = tmpl.render(context! {
@@ -158,9 +188,9 @@ pub fn write_task_file(
     file_hash: &str,
     tier: u8,
 ) -> Result<PathBuf> {
-    // Build directory path: ./task/_<project>/tier<N>/
+    // Build directory path: ./task/<project>/tier<N>/
     let tier_dir = output_dir
-        .join(format!("_{project_name}"))
+        .join(project_name)
         .join(format!("tier{tier}"));
     
     // Create directories if they don't exist

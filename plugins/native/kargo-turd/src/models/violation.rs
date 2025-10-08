@@ -53,6 +53,8 @@ pub struct UnusedDependency {
     pub name: String,           // Crate name
     pub cargo_toml: String,     // Path to Cargo.toml
     pub section: String,        // "[dependencies]", "[dev-dependencies]", or "[build-dependencies]"
+    pub toml_snippet: String,   // Context snippet from Cargo.toml showing the declaration
+    pub toml_diff: String,      // Pre-rendered unified diff body (lines prefixed with "- ")
 }
 
 /// Metadata about a function definition (used for orphan detection)
@@ -78,8 +80,12 @@ pub struct FunctionInfo {
 #[must_use] 
 pub fn compute_file_hash(path: &std::path::Path) -> String {
     use sha2::{Sha256, Digest};
+    use std::fs;
     let mut hasher = Sha256::new();
-    hasher.update(path.to_string_lossy().as_bytes());
+    // Canonicalize to normalize symlinks and relative segments.
+    // Fall back to the provided path string if canonicalization fails.
+    let normalized = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    hasher.update(normalized.to_string_lossy().as_bytes());
     let result = hasher.finalize();
     format!("{result:x}")[..8].to_string()
 }

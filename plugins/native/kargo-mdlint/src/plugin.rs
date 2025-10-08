@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 use anyhow::Result;
 use clap::{Arg, Command, CommandFactory};
 use clap_complete::Shell;

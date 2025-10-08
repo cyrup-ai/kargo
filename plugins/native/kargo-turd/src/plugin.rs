@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 use clap::{Arg, Command};
 use kargo_plugin_api::{BoxFuture, ExecutionContext, PluginCommand};
 use crate::{Config, run_watch_mode, run_analysis_sync};
@@ -83,11 +82,10 @@ impl PluginCommand for TurdPlugin {
                 // Normal mode - run once
                 // CPU-intensive analysis runs on rayon thread pool via spawn_blocking
                 // This is the correct pattern: async interface → spawn_blocking bridge → rayon parallel work
-                tokio::task::spawn_blocking(move || {
+                // Run sync analysis on a runtime worker thread, preserving the reactor
+                tokio::task::block_in_place(|| {
                     run_analysis_sync(&config)
-                })
-                .await
-                .map_err(|e| anyhow::anyhow!("Task join error: {e}"))??;
+                })?;
             }
 
             Ok(())

@@ -27,7 +27,7 @@ git-url-parse = "0.6"
 jwalk = { workspace = true }
 rayon = { workspace = true }
 toml_edit = { workspace = true }
-futures = { workspace = true }
+# futures removed: no usages found in src/; can add back if needed later
 cargo_metadata = { workspace = true }
 tempfile = { workspace = true }
 directories = { workspace = true }

@@ -8,43 +8,43 @@
 
 ---
 
-{% if needs_decomposition %}
+{%- if needs_decomposition -%}
 {% include "decompose.j2.md" %}
 
 ---
-{% endif %}
+{%- endif -%}
 
-{% if tier1_violations %}
+{%- if tier1_violations -%}
 {% include "tier1.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if tier2_violations %}
+{%- if tier2_violations -%}
 {% include "tier2.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if tier3_violations %}
+{%- if tier3_violations -%}
 {% include "tier3.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if panic_patterns %}
+{%- if panic_patterns -%}
 {% include "panic_patterns.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if tests_in_src %}
+{%- if tests_in_src -%}
 {% include "tests_in_src.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if orphaned_modules %}
+{%- if orphaned_modules -%}
 {% include "orphaned_modules.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if orphaned_methods %}
+{%- if orphaned_methods -%}
 {% include "orphaned_methods.j2.md" %}
-{% endif %}
+{%- endif -%}
 
-{% if unused_dependencies %}
+{%- if unused_dependencies -%}
 {% include "unused_dependencies.j2.md" %}
-{% endif %}
+{%- endif -%}
 
 ---
 

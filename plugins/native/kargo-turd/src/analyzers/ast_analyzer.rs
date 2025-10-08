@@ -230,6 +230,11 @@ impl FunctionCollector<'_> {
             return true;
         }
 
+        // Skip well-known plugin factory exported by native plugins
+        if name == "kargo_plugin_create" {
+            return true;
+        }
+
         // Skip test functions
         if Self::has_test_attr(attrs) {
             return true;

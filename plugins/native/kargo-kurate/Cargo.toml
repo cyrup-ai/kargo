@@ -6,8 +6,12 @@ edition.workspace = true
 [lib]
 name = "kargo_kurate"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# Plugin API
+kargo-plugin-api = { workspace = true }
+
 anyhow = { workspace = true }
 rayon = { workspace = true }
 jwalk = { workspace = true }

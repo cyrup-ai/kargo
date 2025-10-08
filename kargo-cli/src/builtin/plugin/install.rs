@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use cargo_metadata::{MetadataCommand, TargetKind};
-use kargo_plugin_api::PluginCommand;
-use super::{build, git, metadata, parser};
+use std::path::PathBuf;
+use super::{artifact, build, git, metadata, parser};
 use parser::SourceType;
 
 pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()> {
@@ -9,14 +9,24 @@ pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()>
 
     let source_type = parser::parse_source(source)?;
 
-    let repo_dir = match &source_type {
+    enum RepoSource {
+        Temporary(tempfile::TempDir),
+        Local(PathBuf),
+    }
+
+    let repo_source = match &source_type {
         SourceType::GitHub { org, repo, plugin: _ } => {
             let temp = tempfile::tempdir().context("Failed to create temporary directory")?;
             let url = format!("https://github.com/{org}/{repo}");
-            git::clone_repository(&url, temp.path()).await?;
-            temp.keep()
+            git::clone_repository(&url, temp.path(), branch.map(|s| s.as_str())).await?;
+            RepoSource::Temporary(temp)
         }
-        SourceType::LocalPath(path) => path.clone(),
+        SourceType::LocalPath(path) => RepoSource::Local(path.clone()),
+    };
+
+    let repo_dir = match &repo_source {
+        RepoSource::Temporary(temp) => temp.path(),
+        RepoSource::Local(path) => path.as_path(),
     };
 
     let root_manifest = repo_dir.join("Cargo.toml");
@@ -30,7 +40,7 @@ pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()>
         .exec()
         .context("Failed to read workspace metadata")?;
 
-    let workspace_members: Vec<_> = cargo_meta
+    let mut workspace_members: Vec<_> = cargo_meta
         .packages
         .iter()
         .filter(|pkg| {
@@ -39,6 +49,20 @@ pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()>
                 .any(|t| t.kind.contains(&TargetKind::CDyLib))
         })
         .collect();
+
+    // For LocalPath, check if user pointed to a specific package directory
+    // (cargo metadata always resolves to workspace root, so we need to filter)
+    if let SourceType::LocalPath(_) = &source_type {
+        let target_manifest = root_manifest.canonicalize()?;
+        let matching_pkg = workspace_members
+            .iter()
+            .find(|pkg| pkg.manifest_path.as_std_path() == target_manifest);
+        
+        if let Some(pkg) = matching_pkg {
+            // User pointed to a specific package, not the workspace root
+            workspace_members.retain(|p| p.id == pkg.id);
+        }
+    }
 
     if workspace_members.is_empty() {
         anyhow::bail!("No cdylib plugins found in {}", repo_dir.display());
@@ -96,27 +120,19 @@ pub async fn install_plugin(source: &str, branch: Option<&String>) -> Result<()>
 
     let plugin_metadata = metadata::extract_plugin_metadata(plugin_to_install.manifest_path.as_std_path())?;
 
-    let lib_artifact = build::find_lib_artifact(plugin_manifest_dir.as_std_path(), &plugin_metadata.name)?;
+    let lib_artifact = artifact::find_lib_artifact(plugin_manifest_dir.as_std_path(), &plugin_metadata.name)?;
 
     {
         let lib = unsafe { libloading::Library::new(&lib_artifact) }
             .context("Failed to load plugin library")?;
 
-        #[allow(improper_ctypes_definitions)]
-        type PluginCreate = unsafe extern "C" fn() -> *mut dyn PluginCommand;
-
-        let constructor: libloading::Symbol<PluginCreate> = unsafe {
+        let constructor: libloading::Symbol<kargo_plugin_api::CreateFn> = unsafe {
             lib.get(b"kargo_plugin_create")
                 .context("Plugin does not export 'kargo_plugin_create' symbol")?
         };
 
-        let _plugin_ptr = unsafe { constructor() };
-        if _plugin_ptr.is_null() {
-            anyhow::bail!("Plugin constructor returned null pointer");
-        }
-        unsafe {
-            let _ = Box::from_raw(_plugin_ptr);
-        }
+        let _plugin = constructor();
+        // Plugin is dropped here, validating it can be created successfully
     }
 
     let config_dir = dirs::config_dir()

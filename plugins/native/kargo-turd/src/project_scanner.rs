@@ -33,39 +33,39 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     Ok(projects)
 }
 
-/// Find all Rust projects starting from `root_path`
-/// Returns Vec of Project with collected src and test files
-pub fn find_projects(root_path: &Path) -> Result<Vec<Project>> {
-    let cargo_toml_paths = find_cargo_toml_files(root_path)?;
-
-    let mut projects = Vec::new();
-    for cargo_path in cargo_toml_paths {
-        let mut project = Project::new(cargo_path.clone())?;
-        collect_rust_files(&cargo_path, &mut project)?;
-        projects.push(project);
-    }
-
-    Ok(projects)
-}
 
 /// Parallel directory traversal to find all Cargo.toml files
 /// Uses jwalk with rayon for parallel scanning across all CPU cores
 fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
     let mut cargo_toml_paths = Vec::new();
 
+    // Directories to prune aggressively
+    const PRUNE_DIRS: &[&str] = &[
+        "target", "task", "tmp", ".git", ".github", ".idea", ".vscode",
+        "node_modules", "dist", "build", "out", "coverage"
+    ];
+
     for entry in WalkDir::new(root_path)
-        .follow_links(true)  // IMPORTANT: Follow symlinks
+        .follow_links(false)
+        .skip_hidden(true)
         .parallelism(jwalk::Parallelism::RayonNewPool(0))  // 0 = use all CPU cores
+        .process_read_dir(|_depth, _path, _state, entries| {
+            entries.retain(|res| {
+                if let Ok(entry) = res {
+                    if entry.file_type().is_dir() {
+                        let name = entry.file_name().to_string_lossy();
+                        return !PRUNE_DIRS.iter().any(|p| name == *p);
+                    }
+                }
+                true
+            });
+        })
         .into_iter()
         .filter_map(std::result::Result::ok)  // Skip permission denied errors
     {
         let path = entry.path();
         if path.file_name().is_some_and(|f| f == "Cargo.toml") {
-            // Skip output and build directories
-            let path_str = path.to_string_lossy();
-            if !path_str.contains("/target/") && !path_str.contains("/task/") {
-                cargo_toml_paths.push(path);
-            }
+            cargo_toml_paths.push(path);
         }
     }
 
@@ -96,7 +96,27 @@ fn collect_rust_files(cargo_toml: &Path, project: &mut Project) -> Result<()> {
 fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
+    // Directories to prune aggressively
+    const PRUNE_DIRS: &[&str] = &[
+        "target", "task", "tmp", ".git", ".github", ".idea", ".vscode",
+        "node_modules", "dist", "build", "out", "coverage"
+    ];
+
     for entry in WalkDir::new(dir)
+        .follow_links(false)
+        .skip_hidden(true)
+        .process_read_dir(|_depth, _path, _state, entries| {
+            entries.retain(|res| {
+                // Keep files always; for directories, prune common heavy dirs
+                if let Ok(entry) = res {
+                    if entry.file_type().is_dir() {
+                        let name = entry.file_name().to_string_lossy();
+                        return !PRUNE_DIRS.iter().any(|p| name == *p);
+                    }
+                }
+                true
+            });
+        })
         .into_iter()
         .filter_map(std::result::Result::ok)
     {

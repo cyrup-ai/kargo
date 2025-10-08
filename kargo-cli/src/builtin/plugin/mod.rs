@@ -5,6 +5,7 @@ mod git;
 mod metadata;
 mod parser;
 mod build;
+pub(crate) mod artifact;
 
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};

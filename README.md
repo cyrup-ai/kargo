@@ -142,11 +142,11 @@ kargo plugin remove https://github.com/ORG/REPO
 
 ## Available Plugins
 
-The following plugins are available in the `./plugins/native/` directory of this repository.
+**7 plugins** are planned for this repository. Currently **4 are complete** and installable, with **3 in development**.
 
-### Installing Plugins from cyrup-ai/kargo
+### Quick Install (Complete Plugins)
 
-Since the plugins are part of the main kargo repository, you need to clone it first and install from local paths:
+Since the plugins are part of the main kargo repository, clone it first and install from local paths:
 
 ```bash
 # 1. Clone the kargo repository
@@ -156,7 +156,7 @@ cd kargo
 # 2. Build the workspace (optional but recommended)
 cargo build --workspace --release
 
-# 3. Install individual plugins
+# 3. Install complete plugins (4 available)
 kargo plugin install ./plugins/native/kargo-mddoc
 kargo plugin install ./plugins/native/kargo-turd
 kargo plugin install ./plugins/native/kargo-mdlint
@@ -164,6 +164,10 @@ kargo plugin install ./plugins/native/kargo-sap
 ```
 
 ---
+
+## Complete Plugins (4)
+
+These plugins are fully implemented and ready to use:
 
 ### kargo-mddoc
 
@@ -247,13 +251,75 @@ kargo sap --help                     # See all options
 - Structured output format
 - Optimized for LLM consumption
 
-### In Development
+---
 
-The following plugins are available in the repository but may be standalone tools or in development:
+## Plugins In Development (3)
 
-- **kargo-upgrade**: Dependency upgrade automation
-- **kargo-walk**: Project walking and discovery
-- **kargo-kurate**: Cargo execution orchestration
+The following plugins are partially implemented and cannot yet be installed. See task files in `/tasks/` for implementation details.
+
+### kargo-kurate
+
+**Status:** Library only, needs plugin interface  
+**Task:** `/tasks/PLUG11_kargo_kurate_plugin.md`
+
+Cargo execution orchestrator with LLM-friendly output processing.
+
+**Planned Usage:**
+```bash
+kargo kurate build --release   # Run cargo with processed output
+kargo kurate test             # Run tests with LLM-optimized formatting
+```
+
+**Features:**
+- Wraps any cargo command
+- Processes output for LLM consumption
+- Highlights errors and warnings
+- Summarizes large outputs
+- Async execution support
+
+### kargo-upgrade
+
+**Status:** Library only, needs plugin interface  
+**Task:** `/tasks/PLUG12_kargo_upgrade_plugin.md`
+
+Automated dependency upgrade tool.
+
+**Planned Usage:**
+```bash
+kargo upgrade                     # Check for dependency updates
+kargo upgrade --compatible-only   # Only non-breaking updates
+kargo upgrade --apply             # Auto-apply updates
+```
+
+**Features:**
+- Scans Cargo.toml and other dependency sources
+- Checks crates.io for latest versions
+- Respects semver compatibility
+- Supports workspaces
+- Can preview or auto-apply updates
+
+### kargo-walk
+
+**Status:** Binary tool, needs conversion to plugin  
+**Task:** `/tasks/PLUG13_kargo_walk_plugin.md`
+
+Project discovery and inventory generator.
+
+**Planned Usage:**
+```bash
+kargo walk                        # Scan current directory
+kargo walk /path/to/scan          # Scan specific path
+kargo walk --output inventory.yaml # Custom output file
+```
+
+**Features:**
+- Discovers all Rust projects in directory
+- Extracts project metadata
+- Checks build status
+- Analyzes project relationships
+- Generates YAML inventory
+
+**Contributing:** These plugins need to be completed. See the task files for detailed implementation instructions.
 
 ## Usage Examples
 

@@ -2,12 +2,17 @@
 name = "kargo-walk"
 version.workspace = true
 edition.workspace = true
+description = "Kargo plugin for discovering and inventorying Rust projects"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cyrup-ai/kargo"
 
-[[bin]]
-name = "kargo-walk"
-path = "src/main.rs"
+[lib]
+name = "kargo_walk"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+kargo-plugin-api = { workspace = true }
 anyhow = { workspace = true }
 rayon = { workspace = true }
 jwalk = { workspace = true }

@@ -6,8 +6,10 @@ edition.workspace = true
 [lib]
 name = "kargo_upgrade"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+kargo-plugin-api = { workspace = true }
 anyhow = { workspace = true }
 rayon = { workspace = true }
 jwalk = { workspace = true }
