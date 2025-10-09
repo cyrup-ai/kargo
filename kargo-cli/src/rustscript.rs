@@ -184,7 +184,7 @@ impl RustScript {
         };
 
         // Create updater for getting latest versions from crates.io
-        let updater = CratesIoUpdater::new(options);
+        let updater = CratesIoUpdater::new(options, tokio::runtime::Handle::try_current().ok());
 
         // Update all dependencies concurrently
         let mut updates = Vec::new();

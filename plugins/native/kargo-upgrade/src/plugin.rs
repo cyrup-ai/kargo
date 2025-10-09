@@ -60,7 +60,7 @@ impl PluginCommand for UpgradePlugin {
                 update_workspace: true,
                 compatible_only,
             };
-            let updater = CratesIoUpdater::new(options);
+            let updater = CratesIoUpdater::new(options, ctx.runtime_handle.clone());
             
             println!("🔍 Scanning for dependencies in {}...", scan_path.display());
             
@@ -78,7 +78,7 @@ impl PluginCommand for UpgradePlugin {
             
             // Process Cargo.toml files
             for path in cargo_files {
-                let mut source = DependencySource::from_path(&path).await?;
+                let mut source = DependencySource::from_path_with(ctx.runtime_handle.as_ref(), &path).await?;
                 let dependencies = cargo_parser.parse(&source)?;
                 
                 let mut file_updates = Vec::new();
@@ -105,7 +105,7 @@ impl PluginCommand for UpgradePlugin {
             
             // Process Rust scripts
             for path in rust_scripts {
-                let mut source = DependencySource::from_path(&path).await?;
+                let mut source = DependencySource::from_path_with(ctx.runtime_handle.as_ref(), &path).await?;
                 let dependencies = script_parser.parse(&source)?;
                 
                 let mut file_updates = Vec::new();

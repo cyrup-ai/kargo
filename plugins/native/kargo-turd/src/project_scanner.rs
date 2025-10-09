@@ -51,11 +51,9 @@ fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
         .parallelism(jwalk::Parallelism::RayonNewPool(0))  // 0 = use all CPU cores
         .process_read_dir(|_depth, _path, _state, entries| {
             entries.retain(|res| {
-                if let Ok(entry) = res {
-                    if entry.file_type().is_dir() {
-                        let name = entry.file_name().to_string_lossy();
-                        return !PRUNE_DIRS.iter().any(|p| name == *p);
-                    }
+                if let Ok(entry) = res && entry.file_type().is_dir() {
+                    let name = entry.file_name().to_string_lossy();
+                    return !PRUNE_DIRS.iter().any(|p| name == *p);
                 }
                 true
             });
@@ -108,11 +106,9 @@ fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
         .process_read_dir(|_depth, _path, _state, entries| {
             entries.retain(|res| {
                 // Keep files always; for directories, prune common heavy dirs
-                if let Ok(entry) = res {
-                    if entry.file_type().is_dir() {
-                        let name = entry.file_name().to_string_lossy();
-                        return !PRUNE_DIRS.iter().any(|p| name == *p);
-                    }
+                if let Ok(entry) = res && entry.file_type().is_dir() {
+                    let name = entry.file_name().to_string_lossy();
+                    return !PRUNE_DIRS.iter().any(|p| name == *p);
                 }
                 true
             });

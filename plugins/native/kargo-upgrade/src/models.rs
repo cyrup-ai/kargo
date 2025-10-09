@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 
 use crate::types::PendingWrite;
 
@@ -60,10 +59,22 @@ pub enum DependencySource {
 }
 
 impl DependencySource {
-    /// Create a dependency source from a file path
-    pub async fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+    /// Create a dependency source from a file path using the provided Tokio runtime handle
+    /// to offload blocking file IO without blocking the async runtime.
+    pub async fn from_path_with(handle: Option<&tokio::runtime::Handle>, path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let content = fs::read_to_string(&path).await?;
+        // Use spawn_blocking on the provided runtime handle to read the file contents.
+        let content = if let Some(h) = handle {
+            let p_for_read = path.clone();
+            let p_for_err = path.clone();
+            h.spawn_blocking(move || std::fs::read_to_string(&p_for_read))
+                .await
+                .map_err(|e| anyhow::anyhow!("JoinError while reading {}: {}", p_for_err.display(), e))??
+        } else {
+            // Fallback (should not happen under kargo runtime path): do a synchronous read.
+            // This avoids requiring a reactor context in environments without a Handle.
+            std::fs::read_to_string(&path)?
+        };
 
         // Check if it's a Cargo.toml file
         if path.file_name().is_some_and(|name| name == "Cargo.toml") {
@@ -79,6 +90,11 @@ impl DependencySource {
             // Assume it's a Rust script
             Ok(DependencySource::RustScript { path, content })
         }
+    }
+
+    /// Backwards-compatible helper retaining the old signature. Prefer `from_path_with`.
+    pub async fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_path_with(tokio::runtime::Handle::try_current().ok().as_ref(), path).await
     }
 
     /// Get the path for this dependency source

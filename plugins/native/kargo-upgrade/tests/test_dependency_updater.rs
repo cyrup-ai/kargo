@@ -81,7 +81,7 @@ async fn test_dependency_up2date() -> Result<()> {
         update_workspace: false,
         compatible_only: true,
     };
-    let real_updater = CratesIoUpdater::new(options);
+    let real_updater = CratesIoUpdater::new(options, tokio::runtime::Handle::try_current().ok());
 
     let test_dep = Dependency {
         name: "serde".to_string(),

@@ -3,7 +3,7 @@
 use semver::Version;
 
 use crate::{
-    crates_io::get_latest_version,
+    crates_io::{get_latest_version, get_latest_version_blocking},
     models::{Dependency, DependencyUpdate, DependencyUpdater},
     types::{PendingDependencyUpdate, UpdateOptions},
 };
@@ -12,12 +12,13 @@ use crate::{
 #[derive(Clone)]
 pub struct CratesIoUpdater {
     options: UpdateOptions,
+    handle: Option<tokio::runtime::Handle>,
 }
 
 impl CratesIoUpdater {
-    /// Create a new updater with the given options
-    pub fn new(options: UpdateOptions) -> Self {
-        Self { options }
+    /// Create a new updater with the given options and optional runtime handle
+    pub fn new(options: UpdateOptions, handle: Option<tokio::runtime::Handle>) -> Self {
+        Self { options, handle }
     }
 }
 
@@ -26,6 +27,7 @@ impl DependencyUpdater for CratesIoUpdater {
         // Clone what we need for the async task
         let dependency = dependency.clone();
         let options = self.options.clone();
+        let handle = self.handle.clone();
 
         // Create a future that will be performed asynchronously
         let update_future = async move {
@@ -40,8 +42,17 @@ impl DependencyUpdater for CratesIoUpdater {
             // When compatible_only is true, we want stable versions only
             let allow_prerelease = !options.compatible_only;
 
-            // Get the latest version from crates.io
-            let to_version = get_latest_version(&dependency.name, allow_prerelease).await?;
+            // Get the latest version from crates.io using a safe execution context
+            let to_version = if let Some(h) = handle {
+                let name = dependency.name.clone();
+                match h.spawn_blocking(move || get_latest_version_blocking(&name, allow_prerelease)).await {
+                    Ok(res) => res?,
+                    Err(e) => return Err(anyhow::anyhow!("JoinError in crates.io call: {}", e)),
+                }
+            } else {
+                // Fallback: use async client (assumes caller has a reactor)
+                get_latest_version(&dependency.name, allow_prerelease).await?
+            };
 
             if let Some(to_version) = to_version {
                 // Skip if already at latest version

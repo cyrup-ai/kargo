@@ -56,19 +56,17 @@ pub fn analyze_unused_dependencies(
             "[build-dependencies]" => "build-dependencies",
             _ => return String::new(),
         };
-        if let Some(table) = toml.get(key).and_then(|v| v.as_table()) {
-            if let Some(val) = table.get(name) {
-                // Construct a minimal doc with just this section and one entry
-                let mut sec = toml::map::Map::new();
-                sec.insert(name.to_string(), val.clone());
-                let mut root = toml::map::Map::new();
-                root.insert(key.to_string(), Value::Table(sec));
-                match toml::to_string(&Value::Table(root)) {
-                    Ok(s) => s,
-                    Err(_) => format!("{section}\n{name} = ...\n"),
-                }
-            } else {
-                String::new()
+        if let Some(table) = toml.get(key).and_then(|v| v.as_table())
+            && let Some(val) = table.get(name)
+        {
+            // Construct a minimal doc with just this section and one entry
+            let mut sec = toml::map::Map::new();
+            sec.insert(name.to_string(), val.clone());
+            let mut root = toml::map::Map::new();
+            root.insert(key.to_string(), Value::Table(sec));
+            match toml::to_string(&Value::Table(root)) {
+                Ok(s) => s,
+                Err(_) => format!("{section}\n{name} = ...\n"),
             }
         } else {
             String::new()
@@ -150,7 +148,7 @@ impl<'a, 'ast> syn::visit::Visit<'ast> for CrateUseCollector<'a> {
     }
     fn visit_attribute(&mut self, i: &'ast syn::Attribute) {
         // Capture crate names referenced in attributes like #[tokio::test]
-        self.add_path(&i.path());
+        self.add_path(i.path());
         syn::visit::visit_attribute(self, i);
     }
     fn visit_item_use(&mut self, i: &'ast syn::ItemUse) {
@@ -243,14 +241,14 @@ pub fn analyze_unused_dependencies_with_context(
             "[build-dependencies]" => "build-dependencies",
             _ => return String::new(),
         };
-        if let Some(table) = toml.get(key).and_then(|v| v.as_table()) {
-            if let Some(val) = table.get(name) {
-                let mut sec = toml::map::Map::new();
-                sec.insert(name.to_string(), val.clone());
-                let mut root = toml::map::Map::new();
-                root.insert(key.to_string(), Value::Table(sec));
-                return toml::to_string(&Value::Table(root)).unwrap_or_else(|_| format!("{section}\n{name} = ...\n"));
-            }
+        if let Some(table) = toml.get(key).and_then(|v| v.as_table())
+            && let Some(val) = table.get(name)
+        {
+            let mut sec = toml::map::Map::new();
+            sec.insert(name.to_string(), val.clone());
+            let mut root = toml::map::Map::new();
+            root.insert(key.to_string(), Value::Table(sec));
+            return toml::to_string(&Value::Table(root)).unwrap_or_else(|_| format!("{section}\n{name} = ...\n"));
         }
         String::new()
     }

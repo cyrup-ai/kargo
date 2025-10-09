@@ -6,6 +6,22 @@ use jwalk::{Parallelism, WalkDir};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+// Common directories to prune during scans to avoid heavy/unwanted fixtures
+const PRUNE_DIRS: &[&str] = &[
+    "target",
+    "task",
+    "tmp",
+    ".git",
+    ".github",
+    ".idea",
+    ".vscode",
+    "node_modules",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+];
+
 /// Find all Cargo.toml files recursively in a directory
 pub fn find_cargo_toml_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
     let root_path = root.as_ref().to_string_lossy();
@@ -16,16 +32,23 @@ pub fn find_cargo_toml_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
     let mut cargo_toml_paths = Vec::new();
     for entry in WalkDir::new(root)
         .follow_links(true)
+        .skip_hidden(true)
+        .process_read_dir(|_depth, _path, _state, entries| {
+            entries.retain(|res| {
+                if let Ok(entry) = res && entry.file_type().is_dir() {
+                    let name = entry.file_name().to_string_lossy();
+                    return !PRUNE_DIRS.iter().any(|p| name == *p);
+                }
+                true
+            });
+        })
         .parallelism(Parallelism::RayonNewPool(0)) // Use available cores
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
         if path.file_name().is_some_and(|f| f == "Cargo.toml") {
-            // Skip nested Cargo.toml files in target directories
-            if !path.to_string_lossy().contains("/target/") {
-                cargo_toml_paths.push(path);
-            }
+            cargo_toml_paths.push(path);
         }
     }
 
@@ -46,19 +69,25 @@ pub fn find_rust_script_files(root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
     let mut rust_script_paths = Vec::new();
     for entry in WalkDir::new(root)
         .follow_links(true)
+        .skip_hidden(true)
+        .process_read_dir(|_depth, _path, _state, entries| {
+            entries.retain(|res| {
+                if let Ok(entry) = res && entry.file_type().is_dir() {
+                    let name = entry.file_name().to_string_lossy();
+                    return !PRUNE_DIRS.iter().any(|p| name == *p);
+                }
+                true
+            });
+        })
         .parallelism(Parallelism::RayonNewPool(0)) // Use available cores
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "rs") {
-            // Skip files in target directories
-            if !path.to_string_lossy().contains("/target/") {
-                // Check if it's a rust-script with cargo dependencies
-                if is_rust_script(&path)? {
-                    rust_script_paths.push(path);
-                }
-            }
+        if path.extension().is_some_and(|ext| ext == "rs")
+            && is_rust_script(&path)?
+        {
+            rust_script_paths.push(path);
         }
     }
 

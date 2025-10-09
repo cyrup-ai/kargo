@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use reqwest::Client;
 use serde_json::Value;
 
-/// Get the latest version of a crate from crates.io
+/// Get the latest version of a crate from crates.io (async)
 /// Returns a Future that resolves to the latest version
 pub async fn get_latest_version(crate_name: &str, allow_prerelease: bool) -> Result<Option<String>> {
     let future = VersionFuture {
@@ -12,6 +12,37 @@ pub async fn get_latest_version(crate_name: &str, allow_prerelease: bool) -> Res
         allow_prerelease,
     };
     future.fetch().await
+}
+
+/// Blocking variant for use inside spawn_blocking
+pub fn get_latest_version_blocking(crate_name: &str, allow_prerelease: bool) -> Result<Option<String>> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("krater/version-up2date")
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let url = format!("https://crates.io/api/v1/crates/{}", crate_name);
+
+    match client.get(&url).send() {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                return Ok(None);
+            }
+            match resp.json::<Value>() {
+                Ok(data) => {
+                    let version_field = if allow_prerelease { "max_version" } else { "max_stable_version" };
+                    let version = data
+                        .get("crate")
+                        .and_then(|c| c.get(version_field))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    Ok(version)
+                }
+                Err(_) => Ok(None),
+            }
+        }
+        Err(e) => Err(anyhow!("Failed to query crates.io: {}", e)),
+    }
 }
 
 /// Domain-specific type for fetching a crate version
