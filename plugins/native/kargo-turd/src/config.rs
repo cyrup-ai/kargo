@@ -23,6 +23,8 @@ impl Default for Config {
             exclude_patterns: vec![
                 "**/target/**".to_string(),  // Cargo build artifacts
                 "**/task/**".to_string(),    // Don't analyze our own output
+                "**/forks/**".to_string(),   // Don't analyze forked projects
+                "**/vendor/**".to_string(),  // Don't analyze vendored dependencies
             ],
             output_dir: PathBuf::from("./task"),
             runtime_handle: None,

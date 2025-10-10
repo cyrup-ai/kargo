@@ -11,7 +11,7 @@ pub struct WalkPlugin;
 
 impl PluginCommand for WalkPlugin {
     fn clap(&self) -> Command {
-        Command::new("walk")
+        Command::new("catalog")
             .about("Discover and inventory Rust projects in a directory")
             .long_about(
                 "Scans directories for Cargo.toml files, analyzes project metadata, \

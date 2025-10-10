@@ -8,7 +8,7 @@ pub struct KuratePlugin;
 
 impl PluginCommand for KuratePlugin {
     fn clap(&self) -> Command {
-        Command::new("kurate")
+        Command::new("summarize")
             .about("Execute cargo commands with LLM-optimized output processing")
             .long_about("Wraps cargo commands and processes their output to be more readable for LLMs")
             .arg(

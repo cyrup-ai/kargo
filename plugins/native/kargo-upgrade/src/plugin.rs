@@ -30,13 +30,19 @@ impl PluginCommand for UpgradePlugin {
             .arg(
                 Arg::new("compatible-only")
                     .long("compatible-only")
-                    .help("Only show compatible updates (no major version bumps)")
+                    .help("Only include compatible updates (no major version bumps)")
+                    .action(clap::ArgAction::SetTrue)
+            )
+            .arg(
+                Arg::new("dry-run")
+                    .long("dry-run")
+                    .help("Preview changes without writing files (default: apply)")
                     .action(clap::ArgAction::SetTrue)
             )
             .arg(
                 Arg::new("apply")
                     .long("apply")
-                    .help("Apply updates to files (default: preview only)")
+                    .help("Apply updates (default behavior). Deprecated: no flag needed.")
                     .action(clap::ArgAction::SetTrue)
             )
     }
@@ -53,7 +59,9 @@ impl PluginCommand for UpgradePlugin {
                 .unwrap_or_else(|| ctx.current_dir.clone());
             
             let compatible_only = matches.get_flag("compatible-only");
-            let apply = matches.get_flag("apply");
+            // Default behavior: apply updates unless --dry-run is specified
+            let dry_run = matches.get_flag("dry-run");
+            let apply = !dry_run;
             
             // Create updater with options
             let options = UpdateOptions {

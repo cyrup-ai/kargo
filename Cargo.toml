@@ -6,13 +6,13 @@ members = [
     "kargo-plugin/kargo-plugin-builder",
     "kargo-plugin/kargo-plugin-native",
     "kargo-plugin/kargo-plugin-wasm",
-    "plugins/native/kargo-kurate",
+    "plugins/native/kargo-summarize",
     "plugins/native/kargo-mddoc",
     "plugins/native/kargo-mdlint",
     "plugins/native/kargo-sap",
     "plugins/native/kargo-turd",
     "plugins/native/kargo-upgrade",
-    "plugins/native/kargo-walk"
+    "plugins/native/kargo-catalog"
 ]
 
 [workspace.package]

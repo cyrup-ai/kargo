@@ -33,6 +33,7 @@ rayon = { workspace = true }
 # Pattern matching
 regex = { workspace = true }
 lazy_static = { workspace = true }
+globset = { workspace = true }
 
 # Serialization
 serde = { workspace = true, features = ["derive"] }

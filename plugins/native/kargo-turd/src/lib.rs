@@ -49,7 +49,7 @@ pub fn run_analysis_sync(config: &Config) -> anyhow::Result<()> {
     let current_dir = env::current_dir()?;
     info!("Working directory: {current_dir:?}");
 
-    let projects = find_projects_with_progress(&current_dir)?;
+    let projects = find_projects_with_progress(&current_dir, config)?;
 
     if projects.is_empty() {
         println!("No Rust projects found.");

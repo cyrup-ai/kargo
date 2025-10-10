@@ -142,7 +142,7 @@ kargo plugin remove https://github.com/ORG/REPO
 
 ## Available Plugins
 
-**7 plugins** are planned for this repository. Currently **4 are complete** and installable, with **3 in development**.
+**7 plugins** are planned for this repository. Currently **5 are complete** and installable, with **2 in development**.
 
 ### Quick Install (Complete Plugins)
 
@@ -257,7 +257,7 @@ kargo sap --help                     # See all options
 
 The following plugins are partially implemented and cannot yet be installed. See task files in `/tasks/` for implementation details.
 
-### kargo-kurate
+### kargo summarize
 
 **Status:** Library only, needs plugin interface  
 **Task:** `/tasks/PLUG11_kargo_kurate_plugin.md`
@@ -266,8 +266,8 @@ Cargo execution orchestrator with LLM-friendly output processing.
 
 **Planned Usage:**
 ```bash
-kargo kurate build --release   # Run cargo with processed output
-kargo kurate test             # Run tests with LLM-optimized formatting
+kargo summarize build --release   # Run cargo with processed output
+kargo summarize test              # Run tests with LLM-optimized formatting
 ```
 
 **Features:**
@@ -279,16 +279,15 @@ kargo kurate test             # Run tests with LLM-optimized formatting
 
 ### kargo-upgrade
 
-**Status:** Library only, needs plugin interface  
-**Task:** `/tasks/PLUG12_kargo_upgrade_plugin.md`
+**Status:** Complete
 
 Automated dependency upgrade tool.
 
-**Planned Usage:**
+**Usage:**
 ```bash
-kargo upgrade                     # Check for dependency updates
-kargo upgrade --compatible-only   # Only non-breaking updates
-kargo upgrade --apply             # Auto-apply updates
+kargo upgrade                      # Apply updates by default
+kargo upgrade --dry-run            # Preview changes without writing
+kargo upgrade --compatible-only    # Only non-breaking updates (still applies unless --dry-run)
 ```
 
 **Features:**
@@ -298,7 +297,7 @@ kargo upgrade --apply             # Auto-apply updates
 - Supports workspaces
 - Can preview or auto-apply updates
 
-### kargo-walk
+### kargo catalog
 
 **Status:** Binary tool, needs conversion to plugin  
 **Task:** `/tasks/PLUG13_kargo_walk_plugin.md`
@@ -307,9 +306,9 @@ Project discovery and inventory generator.
 
 **Planned Usage:**
 ```bash
-kargo walk                        # Scan current directory
-kargo walk /path/to/scan          # Scan specific path
-kargo walk --output inventory.yaml # Custom output file
+kargo catalog                         # Scan current directory
+kargo catalog /path/to/scan           # Scan specific path
+kargo catalog --output inventory.yaml # Custom output file
 ```
 
 **Features:**

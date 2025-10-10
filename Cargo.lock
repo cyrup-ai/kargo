@@ -3627,6 +3627,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "kargo-catalog"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_fs",
+ "cargo-manifest",
+ "cargo_metadata 0.23.0",
+ "cargo_toml",
+ "clap",
+ "directories",
+ "env_logger",
+ "futures",
+ "indicatif 0.18.0",
+ "jwalk",
+ "kargo-plugin-api",
+ "log",
+ "once_cell",
+ "predicates",
+ "rayon",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml_ok",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "toml_edit 0.23.6",
+]
+
+[[package]]
 name = "kargo-cli"
 version = "0.1.0"
 dependencies = [
@@ -3657,36 +3688,6 @@ dependencies = [
  "tokio",
  "toml_edit 0.23.6",
  "which",
-]
-
-[[package]]
-name = "kargo-kurate"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_fs",
- "cargo-manifest",
- "cargo_metadata 0.23.0",
- "clap",
- "directories",
- "env_logger",
- "futures",
- "indicatif 0.18.0",
- "jwalk",
- "kargo-plugin-api",
- "log",
- "once_cell",
- "predicates",
- "rayon",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml_ok",
- "tempfile",
- "tokio",
- "tokio-stream",
- "toml_edit 0.23.6",
 ]
 
 [[package]]
@@ -3781,6 +3782,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "kargo-summarize"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_fs",
+ "cargo-manifest",
+ "cargo_metadata 0.23.0",
+ "clap",
+ "directories",
+ "env_logger",
+ "futures",
+ "indicatif 0.18.0",
+ "jwalk",
+ "kargo-plugin-api",
+ "log",
+ "once_cell",
+ "predicates",
+ "rayon",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml_ok",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "toml_edit 0.23.6",
+]
+
+[[package]]
 name = "kargo-turd"
 version = "0.1.0"
 dependencies = [
@@ -3788,6 +3819,7 @@ dependencies = [
  "chrono",
  "clap",
  "env_logger",
+ "globset",
  "include_dir",
  "indicatif 0.18.0",
  "jwalk",
@@ -3835,37 +3867,6 @@ dependencies = [
  "regex",
  "reqwest",
  "semver",
- "serde",
- "serde_json",
- "serde_yaml_ok",
- "tempfile",
- "tokio",
- "tokio-stream",
- "toml_edit 0.23.6",
-]
-
-[[package]]
-name = "kargo-walk"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_fs",
- "cargo-manifest",
- "cargo_metadata 0.23.0",
- "cargo_toml",
- "clap",
- "directories",
- "env_logger",
- "futures",
- "indicatif 0.18.0",
- "jwalk",
- "kargo-plugin-api",
- "log",
- "once_cell",
- "predicates",
- "rayon",
- "regex",
- "reqwest",
  "serde",
  "serde_json",
  "serde_yaml_ok",

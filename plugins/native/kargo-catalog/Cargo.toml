@@ -1,17 +1,18 @@
 [package]
-name = "kargo-kurate"
+name = "kargo-catalog"
 version.workspace = true
 edition.workspace = true
+description = "Kargo plugin for discovering and inventorying Rust projects"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cyrup-ai/kargo"
 
 [lib]
-name = "kargo_kurate"
+name = "kargo_catalog"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Plugin API
 kargo-plugin-api = { workspace = true }
-
 anyhow = { workspace = true }
 rayon = { workspace = true }
 jwalk = { workspace = true }
@@ -22,7 +23,7 @@ log = { workspace = true }
 env_logger = { workspace = true }
 indicatif = { workspace = true }
 tempfile = { workspace = true }
-tokio-stream = { workspace = true, features = ["sync"] }
+tokio-stream = { workspace = true }
 toml_edit = { workspace = true }
 futures = { workspace = true }
 directories = { workspace = true }
@@ -30,10 +31,11 @@ cargo_metadata = { workspace = true }
 regex = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo"] }
 once_cell = { workspace = true }
-serde_json = { workspace = true, features = ["preserve_order"] }
-reqwest = { workspace = true, features = ["json", "stream", "blocking"] }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
 cargo-manifest = { workspace = true }
+cargo_toml = "0.22.3"
 
 [dev-dependencies]
-assert_fs = { workspace = true }
-predicates = { workspace = true }
+assert_fs = "1.1.3"
+predicates = "3.1.3"

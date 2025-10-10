@@ -4,10 +4,23 @@ use std::path::{Path, PathBuf};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use crate::models::Project;
+use crate::Config;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 
 /// Find all Rust projects starting from `root_path` with visual progress feedback
 /// Returns Vec of Project with collected src and test files
-pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
+/// Uses config.exclude_patterns to filter out directories matching glob patterns
+pub fn find_projects_with_progress(root_path: &Path, config: &Config) -> Result<Vec<Project>> {
+    // Build GlobSet from exclude patterns once (zero-allocation optimization)
+    let mut builder = GlobSetBuilder::new();
+    for pattern in &config.exclude_patterns {
+        let glob = Glob::new(pattern)
+            .map_err(|e| anyhow::anyhow!("Invalid glob pattern '{}': {}", pattern, e))?;
+        builder.add(glob);
+    }
+    let globset = builder.build()
+        .map_err(|e| anyhow::anyhow!("Failed to build glob matcher: {}", e))?;
+
     // Spinner for Cargo.toml discovery phase
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -18,7 +31,7 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     pb.set_message("Scanning for Cargo.toml files...");
     pb.enable_steady_tick(Duration::from_millis(100));
 
-    let cargo_toml_paths = find_cargo_toml_files(root_path)?;
+    let cargo_toml_paths = find_cargo_toml_files(root_path, &globset)?;
 
     pb.finish_with_message(format!("Found {} project(s)", cargo_toml_paths.len()));
 
@@ -26,7 +39,7 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
     let mut projects = Vec::new();
     for cargo_path in cargo_toml_paths {
         let mut project = Project::new(cargo_path.clone())?;
-        collect_rust_files(&cargo_path, &mut project)?;
+        collect_rust_files(&cargo_path, &mut project, &globset)?;
         projects.push(project);
     }
 
@@ -36,24 +49,25 @@ pub fn find_projects_with_progress(root_path: &Path) -> Result<Vec<Project>> {
 
 /// Parallel directory traversal to find all Cargo.toml files
 /// Uses jwalk with rayon for parallel scanning across all CPU cores
-fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
+/// Filters directories using precompiled GlobSet for zero-allocation pattern matching
+fn find_cargo_toml_files(root_path: &Path, globset: &GlobSet) -> Result<Vec<PathBuf>> {
     let mut cargo_toml_paths = Vec::new();
 
-    // Directories to prune aggressively
-    const PRUNE_DIRS: &[&str] = &[
-        "target", "task", "tmp", ".git", ".github", ".idea", ".vscode",
-        "node_modules", "dist", "build", "out", "coverage"
-    ];
+    // Clone globset for use in closure (Arc-based, cheap clone)
+    let globset_clone = globset.clone();
 
     for entry in WalkDir::new(root_path)
         .follow_links(false)
         .skip_hidden(true)
         .parallelism(jwalk::Parallelism::RayonNewPool(0))  // 0 = use all CPU cores
-        .process_read_dir(|_depth, _path, _state, entries| {
+        .process_read_dir(move |_depth, _path, _state, entries| {
             entries.retain(|res| {
-                if let Ok(entry) = res && entry.file_type().is_dir() {
-                    let name = entry.file_name().to_string_lossy();
-                    return !PRUNE_DIRS.iter().any(|p| name == *p);
+                if let Ok(entry) = res {
+                    if entry.file_type().is_dir() {
+                        let path = entry.path();
+                        // Match against full path for patterns like **/vendor/**
+                        return !globset_clone.is_match(&path);
+                    }
                 }
                 true
             });
@@ -71,44 +85,44 @@ fn find_cargo_toml_files(root_path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Collect all .rs files from src/ and tests/ directories
-fn collect_rust_files(cargo_toml: &Path, project: &mut Project) -> Result<()> {
+fn collect_rust_files(cargo_toml: &Path, project: &mut Project, globset: &GlobSet) -> Result<()> {
     let project_dir = cargo_toml.parent()
         .ok_or_else(|| anyhow::anyhow!("Cargo.toml has no parent directory"))?;
 
     // Collect src files (if directory exists)
     let src_dir = project_dir.join("src");
     if src_dir.exists() && src_dir.is_dir() {
-        project.src_files = collect_rs_files(&src_dir)?;
+        project.src_files = collect_rs_files(&src_dir, globset)?;
     }
 
     // Collect test files (if directory exists)
     let tests_dir = project_dir.join("tests");
     if tests_dir.exists() && tests_dir.is_dir() {
-        project.test_files = collect_rs_files(&tests_dir)?;
+        project.test_files = collect_rs_files(&tests_dir, globset)?;
     }
 
     Ok(())
 }
 
 /// Recursively collect all .rs files in a directory
-fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
+/// Filters directories using precompiled GlobSet for zero-allocation pattern matching
+fn collect_rs_files(dir: &Path, globset: &GlobSet) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
-    // Directories to prune aggressively
-    const PRUNE_DIRS: &[&str] = &[
-        "target", "task", "tmp", ".git", ".github", ".idea", ".vscode",
-        "node_modules", "dist", "build", "out", "coverage"
-    ];
+    // Clone globset for use in closure (Arc-based, cheap clone)
+    let globset_clone = globset.clone();
 
     for entry in WalkDir::new(dir)
         .follow_links(false)
         .skip_hidden(true)
-        .process_read_dir(|_depth, _path, _state, entries| {
+        .process_read_dir(move |_depth, _path, _state, entries| {
             entries.retain(|res| {
-                // Keep files always; for directories, prune common heavy dirs
-                if let Ok(entry) = res && entry.file_type().is_dir() {
-                    let name = entry.file_name().to_string_lossy();
-                    return !PRUNE_DIRS.iter().any(|p| name == *p);
+                if let Ok(entry) = res {
+                    if entry.file_type().is_dir() {
+                        let path = entry.path();
+                        // Match against full path for patterns like **/vendor/**
+                        return !globset_clone.is_match(&path);
+                    }
                 }
                 true
             });
